@@ -2,6 +2,7 @@ from __future__ import annotations
 from .voxelmorph import VoxelMorph
 
 @FLOW_ESTIMATORS.register_module()
+@FLOW_ESTIMATORS.register_module(name='VXM_Dual')
 class VoxelMorph_Dual(VoxelMorph):
     def __init__(self, encoder_cfg, decoder_cfg, remain_cfg):
         super().__init__(encoder_cfg, decoder_cfg, remain_cfg)

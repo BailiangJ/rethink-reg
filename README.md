@@ -8,23 +8,38 @@ This is the official Pytorch implementation of the paper @MICCAI2024@WBIR2024:
 ## TODOs
 - [x] Upload networks code
 - [ ] Upload configuration files
+  - [x] Upload network configuration files
+  - [ ] Upload data configuration files
+  - [ ] Upload training configuration files
 - [ ] Upload training and inference scripts
 - [ ] Upload pretrained model weights
-- [ ] Upload Datasets configuration
 - [ ] Update README.md
 
 ---
 
 ## Low-level Computational Blocks
-
+- CNN ([VoxelMorph](https://github.com/voxelmorph/voxelmorph))
+- Transformer ([TransMorph](https://github.com/junyuchen245/TransMorph_Transformer_for_Medical_Image_Registration/))
+- Large-Kernel CNN ([LKU-Net](https://github.com/xi-jia/LKU-Net))
+- Mamba ([MambaMorph](https://github.com/Guo-Stone/MambaMorph))
 ---
 
 ## High-level Registration-specific Designs
-
+![blocks](./assets/DWCPI.png)
+- Dual Stream Encoders
+- Motion Pyramid and Warping
+- Correlation Layers
+- Iterative Optimization
 ---
 
 ## Dataset
-
+### Training
+- OASIS
+- ADNI
+- IXI
+### Zero-shot Evaluation
+- LPBA
+- MindBoggle
 ---
 
 ## Pretrained Model

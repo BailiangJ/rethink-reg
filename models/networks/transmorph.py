@@ -1,17 +1,13 @@
 """TransMorph model.
 
-Swin-Transformer code retrieved from:
-https://github.com/SwinTransformer/Swin-Transformer-Semantic-Segmentation
+TransMorph code retrieved from:
+https://github.com/junyuchen245/TransMorph_Transformer_for_Medical_Image_Registration/blob/main/TransMorph/models/TransMorph.py
 
 Original paper:
-Liu, Z., Lin, Y., Cao, Y., Hu, H., Wei, Y., Zhang, Z., ... & Guo, B. (2021).
-Swin transformer: Hierarchical vision transformer using shifted windows.
-arXiv preprint arXiv:2103.14030.
+Chen J, Frey EC, He Y, Segars WP, Li Y, Du Y.
+Transmorph: Transformer for unsupervised medical image registration.
+Medical image analysis. 2022 Nov 1;82:102615.
 
-Modified and tested by:
-Junyu Chen
-jchen245@jhmi.edu
-Johns Hopkins University
 """
 
 import numpy as np
