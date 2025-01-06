@@ -18,7 +18,6 @@ import torch.utils.checkpoint as checkpoint
 from timm.models.layers import DropPath, to_3tuple, trunc_normal_
 from torch.distributions.normal import Normal
 from models import FLOW_ESTIMATORS
-from TransMorph import configs
 
 
 class Mlp(nn.Module):
