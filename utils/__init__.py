@@ -4,7 +4,7 @@ import random
 import torch
 from contextlib import contextmanager
 from typing import Sequence
-
+from .dataset import PairDataset, IXIBrainDataset
 
 def set_seed(seed: int = 42) -> None:
     np.random.seed(seed)

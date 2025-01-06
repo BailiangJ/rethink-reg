@@ -9,9 +9,14 @@ This is the official Pytorch implementation of the paper @MICCAI2024@WBIR2024:
 - [x] Upload networks code
 - [ ] Upload configuration files
   - [x] Upload network configuration files
-  - [ ] Upload data configuration files
+  - [x] Upload data configuration files
   - [ ] Upload training configuration files
 - [ ] Upload training and inference scripts
+  - [x] Upload training scripts
+  - [ ] Upload inference scripts
+  - [x] Upload evaluation scripts
+  - [ ] Test run on all scripts
+- [ ] Upload dataloading scripts
 - [ ] Upload pretrained model weights
 - [ ] Update README.md
 
@@ -65,7 +70,14 @@ This is the official Pytorch implementation of the paper @MICCAI2024@WBIR2024:
 If you find this repository useful in your research, please consider to cite use in your work by:
 
 ```
-
+@inproceedings{jian2024mamba,
+  title={Mamba? Catch The Hype Or Rethink What Really Helps for Image Registration},
+  author={Jian, Bailiang and Pan, Jiazhen and Ghahremani, Morteza and Rueckert, Daniel and Wachinger, Christian and Wiestler, Benedikt},
+  booktitle={International Workshop on Biomedical Image Registration},
+  pages={86--97},
+  year={2024},
+  organization={Springer}
+}
 ```
 
 ---
