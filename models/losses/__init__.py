@@ -10,13 +10,3 @@ from .icon import ICONLoss, GradICONLoss
 
 # LOSSES.register_module('lncc', module=LocalNormalizedCrossCorrelationLoss)
 LOSSES.register_module('dice_loss', module=DiceLoss)
-
-__all__ = [
-    'GradientDiffusionLoss',
-    'FlowLoss',
-    'InverseConsistentLoss',
-    'MINDSSCLoss',
-    'LocalNormalizedCrossCorrelationLoss',
-    'ICONLoss',
-    'GradICONLoss'
-]

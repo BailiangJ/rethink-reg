@@ -1,12 +1,11 @@
 from __future__ import annotations
-from typing import Sequence, Optional, Dict
+
+from typing import Sequence
+
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-import numpy as np
 from monai.networks.blocks.dynunet_block import get_conv_layer
-from monai.networks.layers.utils import get_act_layer, get_norm_layer
-from models import FLOW_ESTIMATORS
+from monai.networks.layers.utils import get_act_layer
 
 
 class LKBlock(nn.Module):

@@ -8,7 +8,6 @@ import torch.nn.functional as F
 
 from functools import partial
 
-from monai.networks.layers.utils import get_act_layer, get_norm_layer, get_pool_layer
 from monai.networks.blocks.dynunet_block import get_conv_layer
 from models import FLOW_ESTIMATORS, ResizeFlow, Warp
 from .transmorph import FlowConv

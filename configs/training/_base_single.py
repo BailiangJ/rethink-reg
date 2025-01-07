@@ -1,4 +1,5 @@
 device = 'cuda'
+use_amp = True
 amp_dtype = 'float16'
 image_size = [160, 192, 224]
 
@@ -6,6 +7,7 @@ sim_weight = 1.0
 reg_weight = 0.5
 dice_weight = 1.0
 
+load_model = None
 lr = 1e-4
 lr_decay = 0.996
 start_epoch = 0

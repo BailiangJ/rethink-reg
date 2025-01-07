@@ -1,12 +1,9 @@
 from __future__ import annotations
-from typing import Sequence, Optional
 
-import numpy as np
+from typing import Sequence
+
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-
-from functools import partial
 
 from models import FLOW_ESTIMATORS, ResizeFlow
 from .transmorph import FlowConv

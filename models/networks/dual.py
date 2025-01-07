@@ -1,5 +1,6 @@
 from __future__ import annotations
 from .voxelmorph import VoxelMorph
+from models import FLOW_ESTIMATORS
 
 @FLOW_ESTIMATORS.register_module()
 @FLOW_ESTIMATORS.register_module(name='VXM_Dual')

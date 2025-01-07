@@ -12,6 +12,3 @@ METRICS.register_module('haus_dist', module=HausdorffDistanceMetric)
 METRICS.register_module('surf_dist', module=SurfaceDistanceMetric)
 METRICS.register_module('ssim', module=SSIMMetric)
 METRICS.register_module('psnr', module=PSNRMetric)
-
-__all__ = ['SDlogDetJac', 'FgPSNR', 'TargetRegistrationError',
-           'calc_jac_dets', 'calc_measurements', 'get_identity_grid']

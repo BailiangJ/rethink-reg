@@ -1,17 +1,15 @@
 from __future__ import annotations
 from typing import Sequence
-import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-from monai.networks.layers.utils import get_act_layer, get_norm_layer, get_pool_layer
 from monai.networks.blocks.dynunet_block import get_conv_layer
 from models import FLOW_ESTIMATORS
 from .transmorph import FlowConv
 from .voxelmorph import CNNDecoder, CNNEncoder
 from functools import partial
 from .mamba_blocks import MambaLayer, MlpChannel, LayerNorm
+
 
 class MambaEncoder(nn.Module):
     '''

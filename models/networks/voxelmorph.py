@@ -1,17 +1,15 @@
 from __future__ import annotations
+
 from typing import Sequence, Optional
 
-import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-
-from functools import partial
-
-from monai.networks.layers.utils import get_act_layer, get_norm_layer, get_pool_layer
 from monai.networks.blocks.dynunet_block import get_conv_layer
+from monai.networks.layers.utils import get_pool_layer
+
 from models import FLOW_ESTIMATORS
-from .tm import FlowConv
+from .transmorph import FlowConv
+
 
 class BasicBlock(nn.Module):
     '''
@@ -257,6 +255,3 @@ class VoxelMorph(nn.Module):
         dec = self.remain(dec)[-1]
         flow = self.flow_conv(dec)
         return flow
-
-
-

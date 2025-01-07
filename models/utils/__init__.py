@@ -7,11 +7,3 @@ from .resize_flow import ResizeFlow
 from .upsample import UPSAMPLE_LAYERS, DeconvModule, InterpConv
 from .warp import Warp, Warp_off_grid
 from .composite import Composite
-
-__all__ = [
-    'POOLING_LAYERS', 'build_pooling_layer', 'UPSAMPLE_LAYERS', 'DeconvModule',
-    'InterpConv', 'BasicConvBlock', 'BasicEncoder', 'UpConvBlock',
-    'BasicDecoder', 'Warp', 'VecIntegrate', 'ResizeFlow', 'RegistrationHead',
-    'DownSizeRegistrationHead',
-    'Composite', 'Warp_off_grid'
-]

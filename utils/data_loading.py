@@ -70,7 +70,7 @@ def load_data_adni(cfg: CFG, *args, **kwargs):
     for uid in image_uids:
         scan_path = os.path.join(cfg.data_dir, f'{uid}/norm.nii.gz')
         seg_path = os.path.join(cfg.data_dir, f'{uid}/aseg.nii.gz')
-        if os.path.exists(seg_path) and os.path.exists(seg_path):
+        if os.path.exists(scan_path) and os.path.exists(seg_path):
             scan_files.append(scan_path)
             seg_files.append(seg_path)
 
