@@ -16,6 +16,7 @@ class ICONLoss(InverseConsistentLoss):
                  flow_loss_cfg: CFG,
                  image_size: Sequence[int] = (160, 192, 224),
                  interp_mode: str = 'bilinear',
+                 compose_detach: bool = False,
                  ):
         """
         Compute the inverse consistency loss of forward and backward flow
@@ -24,6 +25,7 @@ class ICONLoss(InverseConsistentLoss):
         """
         super().__init__(flow_loss_cfg, image_size, interp_mode)
         self.warp_off = Warp_off_grid(self.image_size, self.interp_mode)
+        self.auto_detach = lambda x: x.detach() if compose_detach else x
 
     def forward(
             self,
@@ -40,7 +42,8 @@ class ICONLoss(InverseConsistentLoss):
         """
 
         # Gaussian noise for off-grid sampling
-        epsilon = torch.randn_like(forward_flow) * (1.0 / self.image_size[-1])
+        # epsilon = torch.randn_like(forward_flow) * (1.0 / self.image_size[-1])
+        epsilon = torch.randn_like(forward_flow)
 
         # off_grid forward_flow
         # phi_AB(I + epsilon)
@@ -51,10 +54,10 @@ class ICONLoss(InverseConsistentLoss):
 
         # off_grid backward_flow in TARGET space
         # phi_BA(phi_AB(I + epsilon)+I+epsilon)
-        bck_flow_eps_ = self.warp_off(backward_flow, fwd_flow_eps, epsilon)
+        bck_flow_eps_ = self.warp_off(backward_flow, self.auto_detach(fwd_flow_eps), epsilon)
         # off_grid forward_flow in SOURCE space
         # phi_AB(phi_BA(I + epsilon)+I+epsilon)
-        fwd_flow_eps_ = self.warp_off(forward_flow, bck_flow_eps, epsilon)
+        fwd_flow_eps_ = self.warp_off(forward_flow, self.auto_detach(bck_flow_eps), epsilon)
 
         zero_flow = torch.zeros_like(forward_flow)
 
@@ -83,16 +86,18 @@ class GradICONLoss(ICONLoss):
                  flow_loss_cfg: CFG,
                  image_size: Sequence[int] = (160, 192, 224),
                  interp_mode: str = 'bilinear',
+                 compose_detach: bool = False,
                  delta: float = 0.001,
                  ):
         """
         Compute the inverse consistency loss of forward and backward flow
         Args:
-            image_size (Sequence[int]): shape of input flow field.
+            delta: float, the step size for finite difference method.
         """
-        super().__init__(flow_loss_cfg, image_size, interp_mode)
+        super().__init__(flow_loss_cfg, image_size, interp_mode, compose_detach)
         self.ndim = len(image_size)
-        self.delta = delta
+        # self.delta = delta
+        self.delta = delta * (self.image_size[-1] // 2)
 
     def forward(
             self,
@@ -109,7 +114,8 @@ class GradICONLoss(ICONLoss):
         """
 
         # Gaussian noise for off-grid sampling
-        epsilon = torch.randn_like(forward_flow) * (1.0 / self.image_size[-1])
+        # epsilon = torch.randn_like(forward_flow) * (1.0 / self.image_size[-1])
+        epsilon = torch.randn_like(forward_flow)
 
         # off_grid forward_flow
         # phi_AB(I + epsilon)
@@ -120,10 +126,10 @@ class GradICONLoss(ICONLoss):
 
         # off_grid backward_flow in TARGET space
         # phi_BA(phi_AB(I + epsilon)+I+epsilon)
-        bck_flow_eps_ = self.warp_off(backward_flow, fwd_flow_eps, epsilon)
+        bck_flow_eps_ = self.warp_off(backward_flow, self.auto_detach(fwd_flow_eps), epsilon)
         # off_grid forward_flow in SOURCE space
         # phi_AB(phi_BA(I + epsilon)+I+epsilon)
-        fwd_flow_eps_ = self.warp_off(forward_flow, bck_flow_eps, epsilon)
+        fwd_flow_eps_ = self.warp_off(forward_flow, self.auto_detach(bck_flow_eps), epsilon)
 
         # inverse consistency error in TARGET space
         # fwd_flow_eps + bck_flow_eps_ = 0
@@ -135,14 +141,14 @@ class GradICONLoss(ICONLoss):
         loss = 0.0
 
         for i in range(self.ndim):
-            d = torch.zeros([1] + [self.ndim] + [1] * self.ndim)
+            d = torch.zeros([1] + [self.ndim] + [1] * self.ndim, device=forward_flow.device, dtype=forward_flow.dtype)
             d[:, i, ...] = self.delta
 
             fwd_flow_eps_d = self.warp(forward_flow, epsilon + d)
             bck_flow_eps_d = self.warp(backward_flow, epsilon + d)
 
-            bck_flow_eps_d_ = self.warp_off(backward_flow, fwd_flow_eps_d, epsilon + d)
-            fwd_flow_eps_d_ = self.warp_off(forward_flow, bck_flow_eps_d, epsilon + d)
+            bck_flow_eps_d_ = self.warp_off(backward_flow, self.auto_detach(fwd_flow_eps_d), epsilon + d)
+            fwd_flow_eps_d_ = self.warp_off(forward_flow, self.auto_detach(bck_flow_eps_d), epsilon + d)
 
             # inverse consistency error (with delta) in TARGET space
             tgt_ic_err_d = fwd_flow_eps_d + bck_flow_eps_d_

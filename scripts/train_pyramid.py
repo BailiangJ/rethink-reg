@@ -12,7 +12,7 @@ import time
 import numpy as np
 import torch
 import wandb
-from utils import worker_init_fn
+from utils import (worker_init_fn, load_data_adni, load_data_oasis, load_data_ixi)
 from mmengine import Config
 from monai.data import DataLoader
 from monai.metrics import DiceMetric, PSNRMetric, SSIMMetric

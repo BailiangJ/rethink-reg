@@ -5,6 +5,9 @@ import torch
 from contextlib import contextmanager
 from typing import Sequence
 from .dataset import PairDataset, IXIBrainDataset
+from .data_loading import (load_data_oasis, load_data_adni, load_data_ixi, load_data_LUMIR, load_data_LPBA,
+                           load_data_Mindboggle)
+
 
 def set_seed(seed: int = 42) -> None:
     np.random.seed(seed)
