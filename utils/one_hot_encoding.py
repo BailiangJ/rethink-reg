@@ -1,10 +1,11 @@
+from typing import Dict, Hashable, Mapping
+
 import numpy as np
-import torch
 from monai.config import KeysCollection
 from monai.config.type_definitions import NdarrayOrTensor
 from monai.networks.utils import one_hot
 from monai.transforms.transform import MapTransform
-from typing import Callable, Dict, Hashable, Mapping, Optional, Sequence, Union
+from monai.transforms.utils_pytorch_numpy_unification import unique
 
 
 class OASISOneHotd(MapTransform):

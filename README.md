@@ -16,8 +16,12 @@ This is the official Pytorch implementation of the paper @MICCAI2024@WBIR2024:
   - [ ] Upload inference scripts
   - [x] Upload evaluation scripts
   - [ ] Test run on all scripts
-- [ ] Upload dataloading scripts
+    - [x] Training scripts
+    - [x] Evaluation scripts
+    - [ ] Numerical problem of Mamba block
+- [x] Upload dataloading scripts
 - [ ] Upload pretrained model weights
+- [ ] Upload error map and deformation plotting script
 - [ ] Update README.md
 
 ---

@@ -1,11 +1,6 @@
-import gc
 import os
-import json, glob
 import argparse
-import nibabel as nib
-from eval_utils import *
-from surface_distance import *
-from collections import OrderedDict
+import os
 import sys
 
 sys.path.append('../')
@@ -14,11 +9,12 @@ import numpy as np
 import torch
 from monai.data import DataLoader
 from monai.metrics import DiceHelper, compute_hausdorff_distance
-from models import Warp, build_registration_head, build_flow_estimator, build_metrics
+from models import build_registration_head, build_flow_estimator, build_metrics
 from mmengine import Config
 from functools import partial
 from models.metrics import calc_jac_dets, calc_measurements, get_identity_grid
-from utils import PairDataset
+from utils import (worker_init_fn, PairDataset, load_data_oasis, load_data_adni, load_data_ixi, load_data_LPBA,
+                   load_data_Mindboggle)
 
 
 def infer(cfg):
@@ -59,7 +55,7 @@ def infer(cfg):
                              ),
     ]
     datasets = [PairDataset(dataset, length=cfg.num_pairs) for dataset in datasets]
-    for d in datasets: print(len(d))
+    for d in datasets: print('num of pairs from each evaluation dataset:', len(d))
     dataloaders = [DataLoader(dataset,
                               batch_size=1,
                               shuffle=True,
@@ -153,14 +149,20 @@ def infer(cfg):
 
         init_dice_list = np.vstack(init_dice_list)
         reg_dice_list = np.vstack(reg_dice_list)
-        hd95_list = np.vstack(hd95_list)
+        # hd95_list = np.vstack(hd95_list)
         non_pos_jacdet_list = np.concatenate(non_pos_jacdet_list, axis=0)
         sd_logjacdet_list = np.concatenate(sd_logjacdet_list, axis=0)
         per_np_jacdet_list = np.concatenate(per_np_jacdet_list, axis=0)
         runtime_list = np.array(runtime_list)
         ndv_list = np.array(ndv_list)
         per_ndv_list = np.array(per_ndv_list)
-        print(hd95_list.shape, per_np_jacdet_list.shape, ndv_list.shape, per_ndv_list.shape, runtime_list.shape)
+        print(
+            # hd95_list.shape,
+            per_np_jacdet_list.shape,
+            ndv_list.shape,
+            per_ndv_list.shape,
+            runtime_list.shape
+        )
 
         np.savez(
             file=os.path.join(cfg.save_dir, ds_name + '.npz'),
@@ -206,9 +208,11 @@ if __name__ == '__main__':
                    type=lambda f: pathlib.Path(f).absolute(),
                    help='path of method folder')
     p.add_argument('--exp-id',
+                   '-exp',
                    required=True,
                    type=int)
     p.add_argument('--epoch-id',
+                   '-epoch',
                    required=True,
                    type=int)
     p.add_argument('--pyramid',
@@ -226,7 +230,8 @@ if __name__ == '__main__':
     load_model = os.path.join(args.method_folder, f'exp{args.exp_id}/saved_models/{args.epoch_id:04d}.pth')
     train_cfg = Config.fromfile(os.path.join(args.method_folder, f'exp{args.exp_id}/train_configs.py'))
 
-    config = Config.fromfile('../configs/eval/_base_.py')
+    # config = Config.fromfile('../configs/eval/_base_.py')
+    config = Config.fromfile('./eval_cfg.py')
 
     config.update(dict(
         save_dir=save_dir,
