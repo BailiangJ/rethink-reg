@@ -30,7 +30,7 @@ class MambaLayer(nn.Module):
 
     def forward(self, x):
         B, C = x.shape[:2]
-        assert C == self.dim
+        assert C == self.dim, f"input channels {C} != layer dim {self.dim}."
         n_tokens = x.shape[2:].numel()
         img_dims = x.shape[2:]
         x_flat = x.reshape(B, C, n_tokens).transpose(-1, -2)
@@ -64,7 +64,7 @@ class ResMambaLayer(nn.Module):
 
     def forward(self, x):
         B, C, H, W, D = x.shape
-        assert C == self.dim
+        assert C == self.dim, f"input channels {C}!= layer dim {self.dim}."
         n_tokens = x.shape[2:].numel()
         x_flat = x.reshape(B, C, n_tokens).transpose(-1, -2)
         x_mamba = self.mamba(self.norm1(x_flat))

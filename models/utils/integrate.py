@@ -20,7 +20,7 @@ class VecIntegrate(nn.Module):
                  interp_mode: str = 'bilinear') -> None:
         super().__init__()
 
-        assert num_steps >= 0, f'num_steps should be >= 0, found:{num_steps}'
+        assert num_steps >= 0, f'num_steps should be >= 0, got {num_steps}.'
         self.num_steps = num_steps
         self.warp_layer = Warp(image_size=image_size, interp_mode=interp_mode)
 

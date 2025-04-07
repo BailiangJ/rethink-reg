@@ -135,7 +135,7 @@ class BasicDecoder(BaseModule):
         super(BasicDecoder, self).__init__(init_cfg)
 
         assert len(skip_channels) == len(out_channels) == len(num_convs) == len(strides) \
-               == len(dilations) == len(pyramid_levels)
+               == len(dilations) == len(pyramid_levels), f"the length of skip_channels, out_channels, num_convs, strides, dilations and pyramid_levels must be the same, but got {len(skip_channels)}, {len(out_channels)}, {len(num_convs)}, {len(strides)}, {len(dilations)} and {len(pyramid_levels)}"
 
         self.in_channels = in_channels
         self.skip_channels = skip_channels

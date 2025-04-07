@@ -178,7 +178,8 @@ class NCC(nn.Module):
                  spatial_dims: int = 3,
                  kernel_size: int = 9,
                  smooth_nr: float = 0.0,
-                 smooth_dr: float = 1e-5) -> None:
+                 smooth_dr: float = 1e-5,
+                 fast: bool = False) -> None:
         super(NCC, self).__init__()
         self.ndim = spatial_dims
         if self.ndim not in {1, 2, 3}:
@@ -195,53 +196,76 @@ class NCC(nn.Module):
         self.stride = [1] * self.ndim
         self.padding = [math.floor(self.kernel_size / 2)] * self.ndim
         self.kernel.require_grads = False
-        self.kernel_vol = self.kernel.sum().squeeze()
+        # self.kernel_vol = self.kernel.sum().squeeze()
+        self.kernel_vol = float(self.kernel_size ** self.ndim)
 
         self.smooth_nr = float(smooth_nr)
         self.smooth_dr = float(smooth_dr)
+
+        self.fast = fast
 
         self.conv = getattr(F, 'conv%dd' % self.ndim)
 
     def forward(self, pred: torch.Tensor,
                 target: torch.Tensor) -> torch.Tensor:
+        '''
+        Args:
+            pred: the shape should be B1H[WD].
+            target: the shape should be B1H[WD].
+        '''
 
         if pred.ndim - 2 != self.ndim:
             raise ValueError(
-                f'expecting pred with {self.ndim} spatial dimensions, got pred of shape {pred.shape}'
-            )
+                f'expecting pred with {self.ndim} spatial dimensions, got pred of shape {pred.shape}')
         if target.shape != pred.shape:
             raise ValueError(
-                f'ground truth has differing shape ({target.shape}) from pred ({pred.shape})'
-            )
+                f'ground truth has differing shape ({target.shape}) from pred ({pred.shape})')
 
         t2, p2, tp = target * target, pred * pred, target * pred
-        kernel, kernel_vol = self.kernel.to(pred), self.kernel_vol.to(pred)
+        kernel= self.kernel.to(pred)
 
-        # sum over kernel
-        t_sum = self.conv(target,
-                          kernel,
-                          stride=self.stride,
-                          padding=self.padding)
-        p_sum = self.conv(pred,
-                          kernel,
-                          stride=self.stride,
-                          padding=self.padding)
-        t2_sum = self.conv(t2,
-                           kernel,
-                           stride=self.stride,
-                           padding=self.padding)
-        p2_sum = self.conv(p2,
-                           kernel,
-                           stride=self.stride,
-                           padding=self.padding)
-        tp_sum = self.conv(tp,
-                           kernel,
-                           stride=self.stride,
-                           padding=self.padding)
+        if not self.fast:
+            # sum over kernel
+            t_sum = self.conv(target,
+                              kernel,
+                              stride=self.stride,
+                              padding=self.padding)
+            p_sum = self.conv(pred,
+                              kernel,
+                              stride=self.stride,
+                              padding=self.padding)
+            t2_sum = self.conv(t2,
+                               kernel,
+                               stride=self.stride,
+                               padding=self.padding)
+            p2_sum = self.conv(p2,
+                               kernel,
+                               stride=self.stride,
+                               padding=self.padding)
+            tp_sum = self.conv(tp,
+                               kernel,
+                               stride=self.stride,
+                               padding=self.padding)
+        else:
+            # Concatenate all tensors along channel dimension to create a single tensor
+            # with 5 groups of channels (target, pred, t2, p2, tp)
+            combined = torch.cat([target, pred, t2, p2, tp], dim=1)  # Shape: [B, 5*C, *spatial_dims]
+
+            kernel = self.kernel.repeat(5, 1, *([1] * self.ndim))  # Shape: [5*C, 1, *kernel_size]
+
+            # Perform grouped convolution - each channel gets its own filter
+            all_sums = self.conv(combined,
+                                 kernel,
+                                 stride=self.stride,
+                                 padding=self.padding,
+                                 groups=5)
+
+            # Split the results back into 5 groups
+            t_sum, p_sum, t2_sum, p2_sum, tp_sum = torch.split(all_sums, 1, dim=1)
 
         # average over kernel
-        t_avg = t_sum / kernel_vol
-        p_avg = p_sum / kernel_vol
+        t_avg = t_sum / self.kernel_vol
+        p_avg = p_sum / self.kernel_vol
 
         # the following is actually squared ncc
         cross = tp_sum - p_avg * t_sum
@@ -261,12 +285,18 @@ class NCC(nn.Module):
 
 
 @LOSSES.register_module('ncc_vxm')
-class NCC_VXM(torch.nn.Module):
+class NCC_VXM(nn.Module):
     """Local (over window) normalized cross correlation loss."""
 
-    def __init__(self, win=None):
+    def __init__(self, win=None, fast=True):
+        '''
+        Args:
+            win: window size for each dimension. If None, defaults to [9]*ndims
+            fast: speed up LNCC with group convolution. https://github.com/xi-jia/FastLNCC/blob/main/FastLNCC.py
+        '''
         super(NCC_VXM, self).__init__()
         self.win = win
+        self.fast = fast
 
     def forward(self, y_true, y_pred):
         C = y_true.shape[1]
@@ -284,7 +314,7 @@ class NCC_VXM(torch.nn.Module):
         win = [9] * ndims if self.win is None else self.win
 
         # compute filters
-        sum_filt = torch.ones([C, 1, *win]).to(y_true.device)
+        sum_filt = torch.ones([C, 1, *win]).to(y_true)
 
         pad_no = math.floor(win[0] / 2)
 
@@ -306,11 +336,25 @@ class NCC_VXM(torch.nn.Module):
         J2 = Ji * Ji
         IJ = Ii * Ji
 
-        I_sum = conv_fn(Ii, sum_filt, stride=stride, padding=padding, groups=C)
-        J_sum = conv_fn(Ji, sum_filt, stride=stride, padding=padding, groups=C)
-        I2_sum = conv_fn(I2, sum_filt, stride=stride, padding=padding, groups=C)
-        J2_sum = conv_fn(J2, sum_filt, stride=stride, padding=padding, groups=C)
-        IJ_sum = conv_fn(IJ, sum_filt, stride=stride, padding=padding, groups=C)
+        if self.fast:
+            # compute filters
+            sum_filt = sum_filt.repeat(5, 1, *([1] * ndims))  # Shape: [5*C, 1, H, W, [D]]
+
+            # Concatenate all 5 tensors along channel dimension
+            all_inputs = torch.cat([Ii, Ji, I2, J2, IJ], dim=1)  # Shape: [B, 5*C, H, W, [D]]
+
+            all_sums = conv_fn(all_inputs, sum_filt, stride=stride, padding=padding, groups=5 * C)
+
+            # Split the results back into the 5 components
+            results = torch.split(all_sums, C, dim=1)
+            I_sum, J_sum, I2_sum, J2_sum, IJ_sum = results
+
+        else:
+            I_sum = conv_fn(Ii, sum_filt, stride=stride, padding=padding, groups=C)
+            J_sum = conv_fn(Ji, sum_filt, stride=stride, padding=padding, groups=C)
+            I2_sum = conv_fn(I2, sum_filt, stride=stride, padding=padding, groups=C)
+            J2_sum = conv_fn(J2, sum_filt, stride=stride, padding=padding, groups=C)
+            IJ_sum = conv_fn(IJ, sum_filt, stride=stride, padding=padding, groups=C)
 
         win_size = np.prod(win)
         u_I = I_sum / win_size

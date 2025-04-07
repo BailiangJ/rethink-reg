@@ -56,7 +56,7 @@ class MambaMlpBlock(nn.Module):
             x: input features with shape of (num_windows*B, N, C)
         """
         B, n_tokens, C = x.shape
-        assert C == self.dim
+        assert C == self.dim, f"input channels {C}!= layer dim {self.dim}."
         x_mamba = self.mamba(self.norm1(x))
         x_mamba = x + self.drop_path(x_mamba)
         x_out = self.mlp(self.norm2(x_mamba))

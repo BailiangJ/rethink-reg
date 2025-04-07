@@ -20,7 +20,7 @@ class FgPSNR:
         else:
             if fg_mask.shape[0] == 1:
                 fg_mask = fg_mask.repeat(B, 1, 1, 1, 1)
-        assert fg_mask.shape == y_pred.shape
+        assert fg_mask.shape == y_pred.shape, f"foreground mask shape {fg_mask.shape} does not match prediction shape {y_pred.shape}."
 
         mse_out = (fg_mask * ((y_pred - y) ** 2)).sum(dim=(2, 3, 4)) \
                   / fg_mask.sum(dim=(2, 3, 4))

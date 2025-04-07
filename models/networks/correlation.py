@@ -10,7 +10,7 @@ class WinCorrTorch3D(nn.Module):
         self.padding = nn.ConstantPad3d(radius, 0)
 
     def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        assert x.shape == y.shape
+        assert x.shape == y.shape, f"inputs shape mismatch {x.shape} and {y.shape} in window-based correlation."
         b, c, d, h, w = x.shape  # depth, height, width
         y_padded = self.padding(y)
         offset = torch.meshgrid(
@@ -29,10 +29,9 @@ class WinCorrTorch3D(nn.Module):
 class GlobalCorrTorch3D(nn.Module):
     def __init__(self):
         super().__init__()
-        pass
 
     def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        assert x.shape == y.shape
+        assert x.shape == y.shape, f"inputs shape mismatch {x.shape} and {y.shape} in global correlation."
         b, c, d, h, w = x.shape
         x_flat = x.view(b, c, -1)
         y_flat = y.view(b, c, -1)

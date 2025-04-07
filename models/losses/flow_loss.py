@@ -18,6 +18,10 @@ def charbonnier_loss(pred: torch.Tensor,
     Args:
         pred (torch.Tensor): The predicted flow. Tensor of shape [B3HWD].
         target (torch.Tensor): The ground truth flow. Tensor of shape [B3HWD].
+        alpha: Power parameter, controls the shape of the loss function
+        eps: Small constant for numerical stability
+        truncate: Optional upper bound to clip the loss values
+        
     Returns:
         loss (torch.Tensor): The Charbonnier loss between the predicted flow and the
             ground truth flow. Tensor of shape [B1HWD].
@@ -109,7 +113,7 @@ class FlowLoss(nn.Module):
             if dist.shape[0] != fg_mask.shape[0]:
                 fg_mask = fg_mask.repeat(dist.shape[0], 1, 1, 1, 1)
 
-            assert dist.shape == fg_mask.shape
+            assert dist.shape == fg_mask.shape, f'foreground mask shape {fg_mask.shape} does not match flow loss dist shape {dist.shape}.'
 
             if not val:
                 loss = torch.sum(dist * fg_mask) / torch.sum(fg_mask)

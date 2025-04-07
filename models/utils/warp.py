@@ -62,7 +62,7 @@ class Warp(nn.Module):
         Returns:
             torch.Tensor: Warped image.
         """
-        assert list(self.image_size) == list(image.shape[2:]) == list(flow.shape[2:])
+        assert list(self.image_size) == list(image.shape[2:]) == list(flow.shape[2:]), f"image_size {self.image_size}, input image to warp shape {image.shape[2:]} and flow shape {flow.shape[2:]} do not match."
 
         # deformation
         # [BNHWD]
@@ -121,7 +121,7 @@ class Warp_off_grid(Warp):
         assert (list(self.image_size) ==
                 list(image.shape[2:]) ==
                 list(flow.shape[2:]) ==
-                list(epsilon.shape[2:]))
+                list(epsilon.shape[2:])), f"image_size {self.image_size}, input image to warp shape {image.shape[2:]}, flow shape {flow.shape[2:]} and epsilon shape {epsilon.shape[2:]} do not match."
 
         # deformation
         # [BNHWD]

@@ -220,7 +220,7 @@ class MultiScaleRegistrationHead(nn.Module):
             flows (Sequence[torch.Tensor]): flow fields predicted by network.
             source (torch.Tensor): source image, tensor of shape [BCHWD].
         """
-        assert len(self.scale_pyramid) == len(flows)
+        assert len(self.scale_pyramid) == len(flows), f"number of scale pyramid {len(self.scale_pyramid)} != number of flows {len(flows)}."
         y_source_list = []
 
         for i, scale in enumerate(self.scale_pyramid):
@@ -275,7 +275,7 @@ class MultiScaleAdditionRegistrationHead(nn.Module):
             flows (Sequence[torch.Tensor]): flow fields predicted by network. multi-scale - [2, 4, 8]
             source (torch.Tensor): source image, tensor of shape [BCHWD].
         """
-        assert len(self.scale_pyramid) + 1 == len(flows)
+        assert len(self.scale_pyramid) + 1 == len(flows), f"number of scale pyramid + 1 {len(self.scale_pyramid)+1}!= number of flows {len(flows)}."
         y_sources_list = []
         add_flows = []
 

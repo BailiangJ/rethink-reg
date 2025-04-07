@@ -34,6 +34,7 @@ class TargetRegistrationError:
         Returns:
             sample_flow: torch.Tensor, sampled displacement vectors
         """
+        sample_grid = sample_grid.clone() # otherwise the keypoints will be changed inplace
         # normalize
         # F.grid_sample takes normalized grid with range at [-1,1]
         for i, dim in enumerate(self.image_size):
@@ -58,16 +59,21 @@ class TargetRegistrationError:
                  moving_keypnts: torch.Tensor) -> torch.Tensor:
         """Compute the target registration error (TRE) between fixed and moved key points.
         Args:
-            flow: torch.Tensor, shape (B,3,H,W,D), dense displacement field
+            flow: torch.Tensor, shape (B,3,H,W,D), dense displacement field mapping from fixed image space to moving image space
             fixed_keypnts: torch.Tensor, shape (B,N,3), fixed key points
             moving_keypnts: torch.Tensor, shape (B,N,3), moving key points
         """
-        assert list(self.image_size) == list(flow.shape[2:])
-        assert fixed_keypnts.shape == moving_keypnts.shape
+        assert list(self.image_size) == list(flow.shape[2:]), f"displacement field spatial dimentions {flow.shape[2:]} do not match image size {self.image_size}."
+        assert fixed_keypnts.shape == moving_keypnts.shape, f"fixed key points shape {fixed_keypnts.shape} does not match moving key points shape {moving_keypnts.shape}."
+        self.spacing = self.spacing.to(device)
 
-        moving_keypnts_flow = self.sample_displacement_flow(moving_keypnts, flow, self.interp_mode)
-        moved_keypnts = moving_keypnts + moving_keypnts_flow.squeeze((0, 1))
+        fixed_keypnts_flow = self.sample_displacement_flow(fixed_keypnts, flow, self.interp_mode)
+        # (B, 3, 1, 1, N) -> (B, 3, N)
+        fixed_keypnts_flow = fixed_keypnts_flow.squeeze((2, 3))
+        # (B, 3, N) -> # (B, N, 3)
+        fixed_keypnts_flow = fixed_keypnts_flow.permute(0, 2, 1)
 
-        tre = torch.linalg.norm((moved_keypnts - fixed_keypnts) * self.spacing, dim=-1)
-        print(tre.shape)
+        warped_fixed_keypnts = fixed_keypnts + fixed_keypnts_flow
+        # (B, N, 3) -> (B, N)
+        tre = torch.linalg.norm((warped_fixed_keypnts - moving_keypnts) * self.spacing, dim=-1)
         return tre

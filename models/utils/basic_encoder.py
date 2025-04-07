@@ -133,7 +133,7 @@ class BasicEncoder(BaseModule):
         super(BasicEncoder, self).__init__(init_cfg)
 
         assert len(out_channels) == len(num_convs) == len(strides) == len(
-            dilations) == len(pyramid_levels)
+            dilations) == len(pyramid_levels), f"the length of out_channels, num_convs, strides, dilations and pyramid_levels must be the same, but got {len(skip_channels)}, {len(out_channels)}, {len(num_convs)}, {len(strides)}, {len(dilations)} and {len(pyramid_levels)}"
         if pool_cfg and any((s == 2 for s in strides)):
             print('using both pooling and stride conv for downsampling.')
         self.in_channels = in_channels

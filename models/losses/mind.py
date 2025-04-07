@@ -49,19 +49,20 @@ class MINDSSCLoss(nn.Module):
         )
 
     def build_kernels(self):
-        # define start and end locations for self-similarity pattern
-        six_neighbourhood = torch.Tensor([[0, 1, 1], [1, 1, 0], [1, 0, 1],
-                                          [1, 1, 2], [2, 1, 1], [1, 2,
-                                                                 1]]).long()
+        # Define the 6-neighborhood pattern
+        six_neighbourhood = torch.Tensor([
+            [0, 1, 1], [1, 1, 0], [1, 0, 1],
+            [1, 1, 2], [2, 1, 1], [1, 2, 1]
+        ]).long()
 
-        # squared distances
+        # Compute squared distances between all pairs
         dist = pdist_squared(six_neighbourhood.t().unsqueeze(0)).squeeze(0)
 
-        # define comparison mask, square distance equals 2
-        x, y = torch.meshgrid(torch.arange(6), torch.arange(6))
+        # Create comparison mask for points with squared distance = 2
+        x, y = torch.meshgrid(torch.arange(6), torch.arange(6), indexing='ij')
         mask = ((x > y).view(-1) & (dist == 2).view(-1))
 
-        # build kernel
+        # Build the first shift kernel
         # self-similarity context: 12 elements
         idx_shift1 = six_neighbourhood.unsqueeze(1).repeat(1, 6,
                                                            1).view(-1,
@@ -71,6 +72,7 @@ class MINDSSCLoss(nn.Module):
                          idx_shift1[:, 1] * 3 + idx_shift1[:, 2]] = 1
         mshift1.requires_grad = False
 
+        # Build the second shift kernel
         idx_shift2 = six_neighbourhood.unsqueeze(0).repeat(6, 1,
                                                            1).view(-1,
                                                                    3)[mask, :]
@@ -79,7 +81,7 @@ class MINDSSCLoss(nn.Module):
                          idx_shift2[:, 1] * 3 + idx_shift2[:, 2]] = 1
         mshift2.requires_grad = False
 
-        # maintain the output size
+        # Create padding layers to maintain output size
         rpad1 = ReplicationPad3d(self.dilation)
         rpad2 = ReplicationPad3d(self.radius)
         return mshift1, mshift2, rpad1, rpad2
@@ -118,7 +120,7 @@ class MINDSSCLoss(nn.Module):
             source: source image, tensor of shape [BNHWD].
             target: target image, tensor fo shape [BNHWD].
         """
-        assert source.shape == target.shape, 'input and target must have the same shape.'
+        assert source.shape == target.shape, f'source shape {source.shape} does not match target shape {target.shape}.'
         if self.penalty == 'l1':
             mind_loss = torch.abs(self.mind(source) - self.mind(target))
         elif self.penalty == 'l2':

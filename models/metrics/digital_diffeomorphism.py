@@ -148,7 +148,7 @@ def calc_jac_dets(trans):
         jac_det['all J_i>0'] *= (jac_det[grad_args] > 0)
 
     # sanity check: if 'all J_i > 0', the central difference must be positive
-    assert np.sum((jac_det['all J_i>0'] > 0) * (jac_det['0x0y0z'] <= 0)) == 0
+    assert np.sum((jac_det['all J_i>0'] > 0) * (jac_det['0x0y0z'] <= 0)) == 0, 'sanity check failed: if all J_i > 0, then central difference must be positive: 0x0y0z > 0.'
 
     jac_det['Jstar_1'] = calc_Jstar_1(trans)
     jac_det['Jstar_2'] = calc_Jstar_2(trans)
