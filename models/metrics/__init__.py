@@ -3,6 +3,7 @@ from monai.metrics import (DiceMetric, HausdorffDistanceMetric, PSNRMetric,
 
 from ..builder import METRICS
 from .sdlogjac import SDlogDetJac
+from .sdlogjac_2d import SDlogDetJac2D, JacDet2D
 from .psnr import FgPSNR
 from .tre import TargetRegistrationError
 from .digital_diffeomorphism import (calc_jac_dets, calc_measurements, get_identity_grid)
