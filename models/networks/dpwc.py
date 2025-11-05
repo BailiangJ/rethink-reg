@@ -10,9 +10,9 @@ from functools import partial
 
 from monai.networks.blocks.dynunet_block import get_conv_layer
 from models import FLOW_ESTIMATORS, ResizeFlow, Warp
-from .transmorph import FlowConv
+from .utils import FlowConv
 from .voxelmorph import CNNEncoder, CNNDecoder, UpBlock
-from .correlation import WinCorrTorch3D, GlobalCorrTorch3D
+from .correlation import WinCorrTorch3D, GlobalCorrTorch3D, WinCorrTorch2D, GlobalCorrTorch2D
 
 
 class WarpPyramidalDecoder(CNNDecoder):
@@ -33,8 +33,8 @@ class WarpPyramidalDecoder(CNNDecoder):
         for i in range(self.num_levels):
             self.flow_convs.append(
                 FlowConv(
+                    spatial_dims=spatial_dims,
                     in_channels=out_channels[i],
-                    out_channels=3,
                 )
             )
         self.resize_flow = ResizeFlow(
@@ -97,9 +97,19 @@ class WarpCorrPyramidalDecoder(WarpPyramidalDecoder):
         self.corr_radius = corr_radius
         self.win_vol = []
         self.corr = nn.ModuleList()
+        # Select correlation class based on spatial_dims
+        if spatial_dims == 2:
+            WinCorr = WinCorrTorch2D
+            GlobalCorr = GlobalCorrTorch2D
+        elif spatial_dims == 3:
+            WinCorr = WinCorrTorch3D
+            GlobalCorr = GlobalCorrTorch3D
+        else:
+            raise ValueError(f"Unsupported spatial_dims: {spatial_dims}")
+
         for k, r in zip(self.out_indices, self.corr_radius):
             self.corr.append(
-                GlobalCorrTorch3D() if r == 0 else WinCorrTorch3D(radius=r)
+                GlobalCorr() if r == 0 else WinCorr(radius=r)
             )
             self.win_vol.append(
                 np.prod(np.array(image_size) // (2 ** k)) if r == 0 else (2 * r + 1) ** spatial_dims

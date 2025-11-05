@@ -1,13 +1,17 @@
 """TransMorph model.
 
-TransMorph code retrieved from:
-https://github.com/junyuchen245/TransMorph_Transformer_for_Medical_Image_Registration/blob/main/TransMorph/models/TransMorph.py
+Swin-Transformer code retrieved from:
+https://github.com/SwinTransformer/Swin-Transformer-Semantic-Segmentation
 
 Original paper:
-Chen J, Frey EC, He Y, Segars WP, Li Y, Du Y.
-Transmorph: Transformer for unsupervised medical image registration.
-Medical image analysis. 2022 Nov 1;82:102615.
+Liu, Z., Lin, Y., Cao, Y., Hu, H., Wei, Y., Zhang, Z., ... & Guo, B. (2021).
+Swin transformer: Hierarchical vision transformer using shifted windows.
+arXiv preprint arXiv:2103.14030.
 
+Modified and tested by:
+Junyu Chen
+jchen245@jhmi.edu
+Johns Hopkins University
 """
 
 import numpy as np
@@ -18,30 +22,7 @@ import torch.utils.checkpoint as checkpoint
 from timm.models.layers import DropPath, to_3tuple, trunc_normal_
 from torch.distributions.normal import Normal
 from models import FLOW_ESTIMATORS
-
-
-class Mlp(nn.Module):
-    def __init__(self,
-                 in_features,
-                 hidden_features=None,
-                 out_features=None,
-                 act_layer=nn.GELU,
-                 drop=0.):
-        super().__init__()
-        out_features = out_features or in_features
-        hidden_features = hidden_features or in_features
-        self.fc1 = nn.Linear(in_features, hidden_features)
-        self.act = act_layer()
-        self.fc2 = nn.Linear(hidden_features, out_features)
-        self.drop = nn.Dropout(drop)
-
-    def forward(self, x):
-        x = self.fc1(x)
-        x = self.act(x)
-        x = self.drop(x)
-        x = self.fc2(x)
-        x = self.drop(x)
-        return x
+from .utils import Mlp, ConvLReLU, FlowConv, TMDecoderBlock
 
 
 def window_partition(x, window_size):
@@ -54,13 +35,23 @@ def window_partition(x, window_size):
         windows: (num_windows*B, window_size, window_size, window_size, C)
     """
     B, H, W, L, C = x.shape
-    x = x.view(B, H // window_size[0], window_size[0], W // window_size[1],
-               window_size[1], L // window_size[2], window_size[2], C)
+    x = x.view(
+        B,
+        H // window_size[0],
+        window_size[0],
+        W // window_size[1],
+        window_size[1],
+        L // window_size[2],
+        window_size[2],
+        C,
+    )
     # permute: [B, H//Mh, Mh, W//Mw, Mw, L//Mw, Ml, C] -> [B, H//M, W//M, L//M, M, M, M, C]
-    # view: [B, H//M, W//M, L//M, M, M, M, C] -> [num_windows*B, Mh, Mw, Ml, C]
-    windows = x.permute(0, 1, 3, 5, 2, 4, 6,
-                        7).contiguous().view(-1, window_size[0],
-                                             window_size[1], window_size[2], C)
+    # view: [B, H//Mh, W//Mw, L//Ml, Mh, Mw, Ml, C] -> [num_windows*B, Mh, Mw, Ml, C]
+    windows = (
+        x.permute(0, 1, 3, 5, 2, 4, 6, 7)
+        .contiguous()
+        .view(-1, window_size[0], window_size[1], window_size[2], C)
+    )
     return windows
 
 
@@ -76,12 +67,21 @@ def window_reverse(windows, window_size, H, W, L):
     Returns:
         x: (B, H, W, L, C)
     """
-    B = int(windows.shape[0] /
-            (H * W * L / window_size[0] / window_size[1] / window_size[2]))
+    B = int(
+        windows.shape[0]
+        / (H * W * L / window_size[0] / window_size[1] / window_size[2])
+    )
     # view: [B*num_windows, Mh, Mw, Ml, C] -> [B, H//Mh, W//Mw, L//Ml, Mh, Mw, Ml, C]
-    x = windows.view(B, H // window_size[0], W // window_size[1],
-                     L // window_size[2], window_size[0], window_size[1],
-                     window_size[2], -1)
+    x = windows.view(
+        B,
+        H // window_size[0],
+        W // window_size[1],
+        L // window_size[2],
+        window_size[0],
+        window_size[1],
+        window_size[2],
+        -1,
+    )
     # permute: [B, H//Mh, W//Mw, L//Ml, Mh, Mw, Ml, C] -> [B, H//Mh, Mh, W//Mw, Mw, L//Ml, Ml, C]
     # view: [B, H//Mh, Mh, W//Mw, Mw, L//Ml, Ml, C] -> [B, H, W, L, C]
     x = x.permute(0, 1, 4, 2, 5, 3, 6, 7).contiguous().view(B, H, W, L, -1)
@@ -103,61 +103,67 @@ class WindowAttention(nn.Module):
         proj_drop (float, optional): Dropout ratio of output. Default: 0.0
     """
 
-    def __init__(self,
-                 dim,
-                 window_size,
-                 num_heads,
-                 qkv_bias=True,
-                 qk_scale=None,
-                 rpe=True,
-                 attn_drop=0.,
-                 proj_drop=0.):
+    def __init__(
+        self,
+        dim,
+        window_size,
+        num_heads,
+        qkv_bias=True,
+        qk_scale=None,
+        rpe=True,
+        attn_drop=0.0,
+        proj_drop=0.0,
+    ):
 
         super().__init__()
         self.dim = dim
-        self.window_size = window_size  # Wh, Ww
+        self.window_size = window_size  # Wh, Ww, Wt
         self.num_heads = num_heads
         head_dim = dim // num_heads
-        self.scale = qk_scale or head_dim ** -0.5
+        self.scale = qk_scale or head_dim**-0.5
 
         # define a parameter table of relative position bias
         self.relative_position_bias_table = nn.Parameter(
-            torch.zeros((2 * window_size[0] - 1) * (2 * window_size[1] - 1) *
-                        (2 * window_size[2] - 1),
-                        num_heads))  # (2*Wh -1) * (2*Ww -1) * (2*Wt -1), nH
+            torch.zeros(
+                (2 * window_size[0] - 1)
+                * (2 * window_size[1] - 1)
+                * (2 * window_size[2] - 1),
+                num_heads,
+            )
+        )  # (2*Wh -1) * (2*Ww -1) * (2*Wt -1), nH
 
         # get pair-wise relative position index for each token inside the window
         coords_h = torch.arange(self.window_size[0])
         coords_w = torch.arange(self.window_size[1])
         coords_t = torch.arange(self.window_size[2])
-        coords = torch.stack(torch.meshgrid([coords_h, coords_w,
-                                             coords_t]))  # 3, Wh, Ww, Wt
+        coords = torch.stack(
+            torch.meshgrid([coords_h, coords_w, coords_t])
+        )  # 3, Wh, Ww, Wt
         coords_flatten = torch.flatten(coords, 1)  # 3, Wh*Ww*Wt
         self.rpe = rpe
         if self.rpe:
-            relative_coords = coords_flatten[:, :,
-                              None] - coords_flatten[:,
-                                      None, :]  # 3, Wh*Ww*Wt, Wh*Ww*Wt
+            relative_coords = (
+                coords_flatten[:, :, None] - coords_flatten[:, None, :]
+            )  # 3, Wh*Ww*Wt, Wh*Ww*Wt
             relative_coords = relative_coords.permute(
-                1, 2, 0).contiguous()  # Wh*Ww*Wt, Wh*Ww*Wt, 3
-            relative_coords[:, :, 0] += self.window_size[
-                                            0] - 1  # shift to start from 0
+                1, 2, 0
+            ).contiguous()  # Wh*Ww*Wt, Wh*Ww*Wt, 3
+            relative_coords[:, :, 0] += self.window_size[0] - 1  # shift to start from 0
             relative_coords[:, :, 1] += self.window_size[1] - 1
             relative_coords[:, :, 2] += self.window_size[2] - 1
-            relative_coords[:, :, 0] *= (2 * self.window_size[1] -
-                                         1) * (2 * self.window_size[2] - 1)
+            relative_coords[:, :, 0] *= (2 * self.window_size[1] - 1) * (
+                2 * self.window_size[2] - 1
+            )
             relative_coords[:, :, 1] *= 2 * self.window_size[2] - 1
-            relative_position_index = relative_coords.sum(
-                -1)  # Wh*Ww*Wt, Wh*Ww*Wt
-            self.register_buffer('relative_position_index',
-                                 relative_position_index)
+            relative_position_index = relative_coords.sum(-1)  # Wh*Ww*Wt, Wh*Ww*Wt
+            self.register_buffer("relative_position_index", relative_position_index)
 
         self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
         self.attn_drop = nn.Dropout(attn_drop)
         self.proj = nn.Linear(dim, dim)
         self.proj_drop = nn.Dropout(proj_drop)
         # initialize learnable relative position bias table
-        trunc_normal_(self.relative_position_bias_table, std=.02)
+        trunc_normal_(self.relative_position_bias_table, std=0.02)
         self.softmax = nn.Softmax(dim=-1)
 
     def forward(self, x, mask=None):
@@ -171,25 +177,33 @@ class WindowAttention(nn.Module):
         # qkv(): -> (num_windows*B, Wh*Ww*Wt, C*3)
         # reshape: -> (num_windows*B, Wh*Ww*Wt, 3, num_heads, C//num_heads)
         # permute: -> (3, num_windows*B, num_heads, Wh*Ww*Wt, C//num_heads)
-        qkv = self.qkv(x).reshape(B_, N, 3, self.num_heads,
-                                  C // self.num_heads).permute(2, 0, 3, 1, 4)
-        q, k, v = qkv[0], qkv[1], qkv[
-            2]  # make torchscript happy (cannot use tensor as tuple)
+        qkv = (
+            self.qkv(x)
+            .reshape(B_, N, 3, self.num_heads, C // self.num_heads)
+            .permute(2, 0, 3, 1, 4)
+        )
+        q, k, v = (
+            qkv[0],
+            qkv[1],
+            qkv[2],
+        )  # make torchscript happy (cannot use tensor as tuple)
 
         # scale = 1/sqrt(C//num_heads)
         # @ - multiply: -> (num_windows*B, num_heads, Wh*Ww*Wt, Wh*Ww*Wt)
         q = q * self.scale
-        attn = (q @ k.transpose(-2, -1))
+        attn = q @ k.transpose(-2, -1)
         if self.rpe:
             # view: [Wh*Ww*Wt*Wh*Ww*Wt, nH] -> [Wh*Ww*Wt, Wh*Ww*Wt, nH]
             relative_position_bias = self.relative_position_bias_table[
-                self.relative_position_index.view(-1)].view(
-                self.window_size[0] * self.window_size[1] *
-                self.window_size[2], self.window_size[0] *
-                self.window_size[1] * self.window_size[2],
-                -1)  # Wh*Ww*Wt,Wh*Ww*Wt,nH
+                self.relative_position_index.view(-1)
+            ].view(
+                self.window_size[0] * self.window_size[1] * self.window_size[2],
+                self.window_size[0] * self.window_size[1] * self.window_size[2],
+                -1,
+            )  # Wh*Ww*Wt,Wh*Ww*Wt,nH
             relative_position_bias = relative_position_bias.permute(
-                2, 0, 1).contiguous()  # nH, Wh*Ww*Wt, Wh*Ww*Wt
+                2, 0, 1
+            ).contiguous()  # nH, Wh*Ww*Wt, Wh*Ww*Wt
             attn = attn + relative_position_bias.unsqueeze(0)
 
         if mask is not None:
@@ -197,9 +211,12 @@ class WindowAttention(nn.Module):
             nW = mask.shape[0]
             # view: [num_windows*B, num_heads, Wh*Ww*Wt, Wh*Ww*Wt] -> [B, nW, num_heads, Wh*Ww*Wt, Wh*Ww*Wt]
             # mask: same region: 0, different region: -100
-            attn = attn.view(B_ // nW, nW, self.num_heads, N,
-                             N) + mask.unsqueeze(1).unsqueeze(0)
-            attn = attn.view(-1, self.num_heads, N, N)
+            attn = attn.view(B_ // nW, nW, self.num_heads, N, N) + mask.unsqueeze(
+                1
+            ).unsqueeze(0)
+            attn = attn.view(
+                -1, self.num_heads, N, N
+            )  # view: -> (num_windows*B, num_heads, Wh*Ww*Wt, Wh*Ww*Wt)
             attn = self.softmax(attn)
         else:
             attn = self.softmax(attn)
@@ -229,49 +246,55 @@ class SwinTransformerBlock(nn.Module):
         norm_layer (nn.Module, optional): Normalization layer.  Default: nn.LayerNorm
     """
 
-    def __init__(self,
-                 dim,
-                 num_heads,
-                 window_size=(7, 7, 7),
-                 shift_size=(0, 0, 0),
-                 mlp_ratio=4.,
-                 qkv_bias=True,
-                 qk_scale=None,
-                 rpe=True,
-                 drop=0.,
-                 attn_drop=0.,
-                 drop_path=0.,
-                 act_layer=nn.GELU,
-                 norm_layer=nn.LayerNorm):
+    def __init__(
+        self,
+        dim,
+        num_heads,
+        window_size=(7, 7, 7),
+        shift_size=(0, 0, 0),
+        mlp_ratio=4.0,
+        qkv_bias=True,
+        qk_scale=None,
+        rpe=True,
+        drop=0.0,
+        attn_drop=0.0,
+        drop_path=0.0,
+        act_layer=nn.GELU,
+        norm_layer=nn.LayerNorm,
+    ):
         super().__init__()
         self.dim = dim
         self.num_heads = num_heads
         self.window_size = window_size
         self.shift_size = shift_size
         self.mlp_ratio = mlp_ratio
-        assert 0 <= min(self.shift_size) < min(
-            self.window_size
-        ), 'shift_size must in 0-window_size, shift_sz: {}, win_size: {}'.format(
-            self.shift_size, self.window_size)
+        assert (
+            0 <= min(self.shift_size) < min(self.window_size)
+        ), "shift_size must in 0-window_size, shift_sz: {}, win_size: {}".format(
+            self.shift_size, self.window_size
+        )
 
         self.norm1 = norm_layer(dim)
-        self.attn = WindowAttention(dim,
-                                    window_size=self.window_size,
-                                    num_heads=num_heads,
-                                    qkv_bias=qkv_bias,
-                                    qk_scale=qk_scale,
-                                    rpe=rpe,
-                                    attn_drop=attn_drop,
-                                    proj_drop=drop)
+        self.attn = WindowAttention(
+            dim,
+            window_size=self.window_size,
+            num_heads=num_heads,
+            qkv_bias=qkv_bias,
+            qk_scale=qk_scale,
+            rpe=rpe,
+            attn_drop=attn_drop,
+            proj_drop=drop,
+        )
 
-        self.drop_path = DropPath(
-            drop_path) if drop_path > 0. else nn.Identity()
+        self.drop_path = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
         self.norm2 = norm_layer(dim)
         mlp_hidden_dim = int(dim * mlp_ratio)
-        self.mlp = Mlp(in_features=dim,
-                       hidden_features=mlp_hidden_dim,
-                       act_layer=act_layer,
-                       drop=drop)
+        self.mlp = Mlp(
+            in_features=dim,
+            hidden_features=mlp_hidden_dim,
+            act_layer=act_layer,
+            drop=drop,
+        )
 
         self.H = None
         self.W = None
@@ -280,7 +303,7 @@ class SwinTransformerBlock(nn.Module):
     def forward(self, x, mask_matrix):
         H, W, T = self.H, self.W, self.T
         B, L, C = x.shape
-        assert L == H * W * T, 'input feature has wrong size'
+        assert L == H * W * T, "input feature has wrong size"
 
         shortcut = x
         x = self.norm1(x)
@@ -288,22 +311,19 @@ class SwinTransformerBlock(nn.Module):
 
         # pad feature maps to multiples of window size
         pad_l = pad_t = pad_f = 0
-        pad_r = (self.window_size[0] -
-                 H % self.window_size[0]) % self.window_size[0]
-        pad_b = (self.window_size[1] -
-                 W % self.window_size[1]) % self.window_size[1]
-        pad_h = (self.window_size[2] -
-                 T % self.window_size[2]) % self.window_size[2]
+        pad_r = (self.window_size[0] - H % self.window_size[0]) % self.window_size[0]
+        pad_b = (self.window_size[1] - W % self.window_size[1]) % self.window_size[1]
+        pad_h = (self.window_size[2] - T % self.window_size[2]) % self.window_size[2]
         x = nnf.pad(x, (0, 0, pad_f, pad_h, pad_t, pad_b, pad_l, pad_r))
         _, Hp, Wp, Tp, _ = x.shape
 
         # cyclic shift
         if min(self.shift_size) > 0:
-            shifted_x = torch.roll(x,
-                                   shifts=(-self.shift_size[0],
-                                           -self.shift_size[1],
-                                           -self.shift_size[2]),
-                                   dims=(1, 2, 3))
+            shifted_x = torch.roll(
+                x,
+                shifts=(-self.shift_size[0], -self.shift_size[1], -self.shift_size[2]),
+                dims=(1, 2, 3),
+            )
             attn_mask = mask_matrix
         else:
             shifted_x = x
@@ -311,32 +331,33 @@ class SwinTransformerBlock(nn.Module):
 
         # partition windows
         x_windows = window_partition(
-            shifted_x,
-            self.window_size)  # nW*B, window_size, window_size, window_size, C
+            shifted_x, self.window_size
+        )  # nW*B, window_size, window_size, window_size, C
         x_windows = x_windows.view(
-            -1,
-            self.window_size[0] * self.window_size[1] * self.window_size[2],
-            C)  # nW*B, window_size*window_size*window_size, C
+            -1, self.window_size[0] * self.window_size[1] * self.window_size[2], C
+        )  # nW*B, window_size*window_size*window_size, C
 
         # W-MSA/SW-MSA
         attn_windows = self.attn(
-            x_windows,
-            mask=attn_mask)  # nW*B, window_size*window_size*window_size, C
+            x_windows, mask=attn_mask
+        )  # nW*B, window_size*window_size*window_size, C
 
         # merge windows
         # nW*B, Wh, Ww, Wt, C
-        attn_windows = attn_windows.view(-1, self.window_size[0],
-                                         self.window_size[1],
-                                         self.window_size[2], C)
-        shifted_x = window_reverse(attn_windows, self.window_size, Hp, Wp,
-                                   Tp)  # B H' W' L' C
+        attn_windows = attn_windows.view(
+            -1, self.window_size[0], self.window_size[1], self.window_size[2], C
+        )
+        shifted_x = window_reverse(
+            attn_windows, self.window_size, Hp, Wp, Tp
+        )  # B H' W' L' C
 
         # reverse cyclic shift
         if min(self.shift_size) > 0:
-            x = torch.roll(shifted_x,
-                           shifts=(self.shift_size[0], self.shift_size[1],
-                                   self.shift_size[2]),
-                           dims=(1, 2, 3))
+            x = torch.roll(
+                shifted_x,
+                shifts=(self.shift_size[0], self.shift_size[1], self.shift_size[2]),
+                dims=(1, 2, 3),
+            )
         else:
             x = shifted_x
 
@@ -365,8 +386,7 @@ class PatchMerging(nn.Module):
         super().__init__()
         self.dim = dim
         # 3D patch merging generate 8 times feature map
-        self.reduction = nn.Linear(8 * dim, (8 // reduce_factor) * dim,
-                                   bias=False)
+        self.reduction = nn.Linear(8 * dim, (8 // reduce_factor) * dim, bias=False)
         self.norm = norm_layer(8 * dim)
 
     def forward(self, x, H, W, T):
@@ -374,8 +394,10 @@ class PatchMerging(nn.Module):
         x: B, H*W*T, C
         """
         B, L, C = x.shape
-        assert L == H * W * T, 'input feature has wrong size'
-        assert H % 2 == 0 and W % 2 == 0 and T % 2 == 0, f'x size ({H}*{W}) are not even.'
+        assert L == H * W * T, "input feature has wrong size"
+        assert (
+            H % 2 == 0 and W % 2 == 0 and T % 2 == 0
+        ), f"x size ({H}*{W}) are not even."
 
         x = x.view(B, H, W, T, C)
 
@@ -395,8 +417,7 @@ class PatchMerging(nn.Module):
         x6 = x[:, 1::2, 0::2, 1::2, :]  # B H/2 W/2 T/2 C
         x7 = x[:, 1::2, 1::2, 1::2, :]  # B H/2 W/2 T/2 C
         # concat along feature dimension
-        x = torch.cat([x0, x1, x2, x3, x4, x5, x6, x7],
-                      -1)  # B H/2 W/2 T/2 8*C
+        x = torch.cat([x0, x1, x2, x3, x4, x5, x6, x7], -1)  # B H/2 W/2 T/2 8*C
         x = x.view(B, -1, 8 * C)  # B H/2*W/2*T/2 8*C
 
         x = self.norm(x)
@@ -425,58 +446,71 @@ class BasicLayer(nn.Module):
     """
 
     def __init__(
-            self,
-            dim,
-            depth,
-            num_heads,
-            window_size=(7, 7, 7),
-            mlp_ratio=4.,
-            qkv_bias=True,
-            qk_scale=None,
-            rpe=True,
-            drop=0.,
-            attn_drop=0.,
-            drop_path=0.,
-            norm_layer=nn.LayerNorm,
-            downsample=None,
-            use_checkpoint=False,
-            pat_merg_rf=2,
+        self,
+        dim,
+        depth,
+        num_heads,
+        window_size=(7, 7, 7),
+        mlp_ratio=4.0,
+        qkv_bias=True,
+        qk_scale=None,
+        rpe=True,
+        drop=0.0,
+        attn_drop=0.0,
+        drop_path=0.0,
+        norm_layer=nn.LayerNorm,
+        downsample=None,
+        use_checkpoint=False,
+        pat_merg_rf=2,
     ):
         super().__init__()
         self.window_size = window_size
         # shift window
-        self.shift_size = (window_size[0] // 2, window_size[1] // 2,
-                           window_size[2] // 2)
+        self.shift_size = (
+            window_size[0] // 2,
+            window_size[1] // 2,
+            window_size[2] // 2,
+        )
         self.depth = depth
         self.use_checkpoint = use_checkpoint
         self.pat_merg_rf = pat_merg_rf
         # build blocks
         # W-MSA + SW-MSA
-        self.blocks = nn.ModuleList([
-            SwinTransformerBlock(
-                dim=dim,
-                num_heads=num_heads,
-                window_size=window_size,
-                shift_size=(0, 0, 0) if (i % 2 == 0) else
-                (window_size[0] // 2, window_size[1] // 2,
-                 window_size[2] // 2),
-                mlp_ratio=mlp_ratio,
-                qkv_bias=qkv_bias,
-                qk_scale=qk_scale,
-                rpe=rpe,
-                drop=drop,
-                attn_drop=attn_drop,
-                drop_path=drop_path[i]
-                if isinstance(drop_path, list) else drop_path,
-                norm_layer=norm_layer,
-            ) for i in range(depth)
-        ])
+        self.blocks = nn.ModuleList(
+            [
+                SwinTransformerBlock(
+                    dim=dim,
+                    num_heads=num_heads,
+                    window_size=window_size,
+                    shift_size=(
+                        (0, 0, 0)
+                        if (i % 2 == 0)
+                        else (
+                            window_size[0] // 2,
+                            window_size[1] // 2,
+                            window_size[2] // 2,
+                        )
+                    ),
+                    mlp_ratio=mlp_ratio,
+                    qkv_bias=qkv_bias,
+                    qk_scale=qk_scale,
+                    rpe=rpe,
+                    drop=drop,
+                    attn_drop=attn_drop,
+                    drop_path=(
+                        drop_path[i] if isinstance(drop_path, list) else drop_path
+                    ),
+                    norm_layer=norm_layer,
+                )
+                for i in range(depth)
+            ]
+        )
 
         # patch merging layer
         if downsample is not None:
-            self.downsample = downsample(dim=dim,
-                                         norm_layer=norm_layer,
-                                         reduce_factor=self.pat_merg_rf)
+            self.downsample = downsample(
+                dim=dim, norm_layer=norm_layer, reduce_factor=self.pat_merg_rf
+            )
         else:
             self.downsample = None
 
@@ -491,20 +525,22 @@ class BasicLayer(nn.Module):
         Hp = int(np.ceil(H / self.window_size[0])) * self.window_size[0]
         Wp = int(np.ceil(W / self.window_size[1])) * self.window_size[1]
         Tp = int(np.ceil(T / self.window_size[2])) * self.window_size[2]
-        img_mask = torch.zeros((1, Hp, Wp, Tp, 1),
-                               device=x.device)  # 1 Hp Wp 1
-        h_slices = (slice(0, -self.window_size[0]),
-                    slice(-self.window_size[0],
-                          -self.shift_size[0]), slice(-self.shift_size[0],
-                                                      None))
-        w_slices = (slice(0, -self.window_size[1]),
-                    slice(-self.window_size[1],
-                          -self.shift_size[1]), slice(-self.shift_size[1],
-                                                      None))
-        t_slices = (slice(0, -self.window_size[2]),
-                    slice(-self.window_size[2],
-                          -self.shift_size[2]), slice(-self.shift_size[2],
-                                                      None))
+        img_mask = torch.zeros((1, Hp, Wp, Tp, 1), device=x.device)  # 1 Hp Wp 1
+        h_slices = (
+            slice(0, -self.window_size[0]),
+            slice(-self.window_size[0], -self.shift_size[0]),
+            slice(-self.shift_size[0], None),
+        )
+        w_slices = (
+            slice(0, -self.window_size[1]),
+            slice(-self.window_size[1], -self.shift_size[1]),
+            slice(-self.shift_size[1], None),
+        )
+        t_slices = (
+            slice(0, -self.window_size[2]),
+            slice(-self.window_size[2], -self.shift_size[2]),
+            slice(-self.shift_size[2], None),
+        )
         cnt = 0
         for h in h_slices:
             for w in w_slices:
@@ -513,15 +549,16 @@ class BasicLayer(nn.Module):
                     cnt += 1
 
         mask_windows = window_partition(
-            img_mask, self.window_size)  # nW, window_size, window_size, 1
+            img_mask, self.window_size
+        )  # nW, window_size, window_size, 1
         mask_windows = mask_windows.view(
-            -1,
-            self.window_size[0] * self.window_size[1] * self.window_size[2])
+            -1, self.window_size[0] * self.window_size[1] * self.window_size[2]
+        )
         # [nW, 1, Mh*Mw*Ml] - [nW, Mh*Mw*Ml, 1] = [nW, Mh*Mw*Ml, Mh*Mw*Ml]
         attn_mask = mask_windows.unsqueeze(1) - mask_windows.unsqueeze(2)
-        attn_mask = attn_mask.masked_fill(attn_mask != 0,
-                                          float(-100.0)).masked_fill(
-            attn_mask == 0, float(0.0))
+        attn_mask = attn_mask.masked_fill(attn_mask != 0, float(-100.0)).masked_fill(
+            attn_mask == 0, float(0.0)
+        )
 
         for blk in self.blocks:
             blk.H, blk.W, blk.T = H, W, T
@@ -538,7 +575,7 @@ class BasicLayer(nn.Module):
 
 
 class PatchEmbed(nn.Module):
-    """ Image to Patch Embedding
+    """Image to Patch Embedding
     Args:
         patch_size (int): Patch token size. Default: 4.
         in_chans (int): Number of input image channels. Default: 3.
@@ -546,11 +583,7 @@ class PatchEmbed(nn.Module):
         norm_layer (nn.Module, optional): Normalization layer. Default: None
     """
 
-    def __init__(self,
-                 patch_size=4,
-                 in_chans=3,
-                 embed_dim=96,
-                 norm_layer=None):
+    def __init__(self, patch_size=4, in_chans=3, embed_dim=96, norm_layer=None):
         super().__init__()
         patch_size = to_3tuple(patch_size)
         self.patch_size = patch_size
@@ -558,10 +591,9 @@ class PatchEmbed(nn.Module):
         self.in_chans = in_chans
         self.embed_dim = embed_dim
 
-        self.proj = nn.Conv3d(in_chans,
-                              embed_dim,
-                              kernel_size=patch_size,
-                              stride=patch_size)
+        self.proj = nn.Conv3d(
+            in_chans, embed_dim, kernel_size=patch_size, stride=patch_size
+        )
         if norm_layer is not None:
             self.norm = norm_layer(embed_dim)
         else:
@@ -576,12 +608,9 @@ class PatchEmbed(nn.Module):
         if T % self.patch_size[2] != 0:
             x = nnf.pad(x, (0, self.patch_size[2] - T % self.patch_size[2]))
         if W % self.patch_size[1] != 0:
-            x = nnf.pad(x,
-                        (0, 0, 0, self.patch_size[1] - W % self.patch_size[1]))
+            x = nnf.pad(x, (0, 0, 0, self.patch_size[1] - W % self.patch_size[1]))
         if H % self.patch_size[0] != 0:
-            x = nnf.pad(
-                x,
-                (0, 0, 0, 0, 0, self.patch_size[0] - H % self.patch_size[0]))
+            x = nnf.pad(x, (0, 0, 0, 0, 0, self.patch_size[0] - H % self.patch_size[0]))
 
         x = self.proj(x)  # B C Wh Ww Wt
         if self.norm is not None:
@@ -597,7 +626,9 @@ class PatchEmbed(nn.Module):
 class SinusoidalPositionEmbedding(nn.Module):
     """Rotary Position Embedding."""
 
-    def __init__(self, ):
+    def __init__(
+        self,
+    ):
         super(SinusoidalPositionEmbedding, self).__init__()
 
     def forward(self, x):
@@ -605,10 +636,8 @@ class SinusoidalPositionEmbedding(nn.Module):
         position_ids = torch.arange(0, n_patches).float().cuda()
         indices = torch.arange(0, hidden // 2).float().cuda()
         indices = torch.pow(10000.0, -2 * indices / hidden)
-        embeddings = torch.einsum('b,d->bd', position_ids, indices)
-        embeddings = torch.stack(
-            [torch.sin(embeddings),
-             torch.cos(embeddings)], dim=-1)
+        embeddings = torch.einsum("b,d->bd", position_ids, indices)
+        embeddings = torch.stack([torch.sin(embeddings), torch.cos(embeddings)], dim=-1)
         embeddings = torch.reshape(embeddings, (1, n_patches, hidden))
         return embeddings
 
@@ -623,8 +652,9 @@ class SinPositionalEncoding3D(nn.Module):
         if channels % 2:
             channels += 1
         self.channels = channels
-        self.inv_freq = 1. / (10000 ** (torch.arange(0, channels, 2).float() /
-                                        channels))
+        self.inv_freq = 1.0 / (
+            10000 ** (torch.arange(0, channels, 2).float() / channels)
+        )
         # self.register_buffer('inv_freq', inv_freq)
 
     def forward(self, tensor):
@@ -634,33 +664,33 @@ class SinPositionalEncoding3D(nn.Module):
         """
         tensor = tensor.permute(0, 2, 3, 4, 1)
         if len(tensor.shape) != 5:
-            raise RuntimeError('The input tensor has to be 5d!')
+            raise RuntimeError("The input tensor has to be 5d!")
         batch_size, x, y, z, orig_ch = tensor.shape
-        pos_x = torch.arange(x,
-                             device=tensor.device).type(self.inv_freq.type())
-        pos_y = torch.arange(y,
-                             device=tensor.device).type(self.inv_freq.type())
-        pos_z = torch.arange(z,
-                             device=tensor.device).type(self.inv_freq.type())
-        sin_inp_x = torch.einsum('i,j->ij', pos_x, self.inv_freq)
-        sin_inp_y = torch.einsum('i,j->ij', pos_y, self.inv_freq)
-        sin_inp_z = torch.einsum('i,j->ij', pos_z, self.inv_freq)
-        emb_x = torch.cat((sin_inp_x.sin(), sin_inp_x.cos()),
-                          dim=-1).unsqueeze(1).unsqueeze(1)
-        emb_y = torch.cat((sin_inp_y.sin(), sin_inp_y.cos()),
-                          dim=-1).unsqueeze(1)
+        pos_x = torch.arange(x, device=tensor.device).type(self.inv_freq.type())
+        pos_y = torch.arange(y, device=tensor.device).type(self.inv_freq.type())
+        pos_z = torch.arange(z, device=tensor.device).type(self.inv_freq.type())
+        sin_inp_x = torch.einsum("i,j->ij", pos_x, self.inv_freq)
+        sin_inp_y = torch.einsum("i,j->ij", pos_y, self.inv_freq)
+        sin_inp_z = torch.einsum("i,j->ij", pos_z, self.inv_freq)
+        emb_x = (
+            torch.cat((sin_inp_x.sin(), sin_inp_x.cos()), dim=-1)
+            .unsqueeze(1)
+            .unsqueeze(1)
+        )
+        emb_y = torch.cat((sin_inp_y.sin(), sin_inp_y.cos()), dim=-1).unsqueeze(1)
         emb_z = torch.cat((sin_inp_z.sin(), sin_inp_z.cos()), dim=-1)
-        emb = torch.zeros((x, y, z, self.channels * 3),
-                          device=tensor.device).type(tensor.type())
-        emb[:, :, :, :self.channels] = emb_x
-        emb[:, :, :, self.channels:2 * self.channels] = emb_y
-        emb[:, :, :, 2 * self.channels:] = emb_z
+        emb = torch.zeros((x, y, z, self.channels * 3), device=tensor.device).type(
+            tensor.type()
+        )
+        emb[:, :, :, : self.channels] = emb_x
+        emb[:, :, :, self.channels : 2 * self.channels] = emb_y
+        emb[:, :, :, 2 * self.channels :] = emb_z
         emb = emb[None, :, :, :, :orig_ch].repeat(batch_size, 1, 1, 1, 1)
         return emb.permute(0, 4, 1, 2, 3)
 
 
 class SwinTransformer(nn.Module):
-    r""" Swin Transformer
+    r"""Swin Transformer
         A PyTorch impl of : `Swin Transformer: Hierarchical Vision Transformer using Shifted Windows`  -
           https://arxiv.org/pdf/2103.14030
     Args:
@@ -686,29 +716,29 @@ class SwinTransformer(nn.Module):
     """
 
     def __init__(
-            self,
-            pretrain_img_size=224,
-            patch_size=4,
-            in_chans=3,
-            embed_dim=96,
-            depths=[2, 2, 6, 2],
-            num_heads=[3, 6, 12, 24],
-            window_size=(7, 7, 7),
-            mlp_ratio=4.,
-            qkv_bias=True,
-            qk_scale=None,
-            drop_rate=0.,
-            attn_drop_rate=0.,
-            drop_path_rate=0.2,
-            norm_layer=nn.LayerNorm,
-            ape=False,
-            spe=False,
-            rpe=True,
-            patch_norm=True,
-            out_indices=(0, 1, 2, 3),
-            frozen_stages=-1,
-            use_checkpoint=False,
-            pat_merg_rf=2,
+        self,
+        pretrain_img_size=224,
+        patch_size=4,
+        in_chans=3,
+        embed_dim=96,
+        depths=[2, 2, 6, 2],
+        num_heads=[3, 6, 12, 24],
+        window_size=(7, 7, 7),
+        mlp_ratio=4.0,
+        qkv_bias=True,
+        qk_scale=None,
+        drop_rate=0.0,
+        attn_drop_rate=0.0,
+        drop_path_rate=0.2,
+        norm_layer=nn.LayerNorm,
+        ape=False,
+        spe=False,
+        rpe=True,
+        patch_norm=True,
+        out_indices=(0, 1, 2, 3),
+        frozen_stages=-1,
+        use_checkpoint=False,
+        pat_merg_rf=2,
     ):
         super().__init__()
         self.pretrain_img_size = pretrain_img_size
@@ -725,7 +755,8 @@ class SwinTransformer(nn.Module):
             patch_size=patch_size,
             in_chans=in_chans,
             embed_dim=embed_dim,
-            norm_layer=norm_layer if self.patch_norm else None)
+            norm_layer=norm_layer if self.patch_norm else None,
+        )
 
         # absolute position embedding
         if self.ape:
@@ -734,13 +765,19 @@ class SwinTransformer(nn.Module):
             patches_resolution = [
                 pretrain_img_size[0] // patch_size[0],
                 pretrain_img_size[1] // patch_size[1],
-                pretrain_img_size[2] // patch_size[2]
+                pretrain_img_size[2] // patch_size[2],
             ]
 
             self.absolute_pos_embed = nn.Parameter(
-                torch.zeros(1, embed_dim, patches_resolution[0],
-                            patches_resolution[1], patches_resolution[2]))
-            trunc_normal_(self.absolute_pos_embed, std=.02)
+                torch.zeros(
+                    1,
+                    embed_dim,
+                    patches_resolution[0],
+                    patches_resolution[1],
+                    patches_resolution[2],
+                )
+            )
+            trunc_normal_(self.absolute_pos_embed, std=0.02)
         elif self.spe:
             self.pos_embd = SinPositionalEncoding3D(embed_dim).cuda()
             # self.pos_embd = SinusoidalPositionEmbedding().cuda()
@@ -757,7 +794,7 @@ class SwinTransformer(nn.Module):
         for i_layer in range(self.num_layers):
             # first swin transformer layer then patch merging
             layer = BasicLayer(
-                dim=int(embed_dim * 2 ** i_layer),
+                dim=int(embed_dim * 2**i_layer),
                 depth=depths[i_layer],
                 num_heads=num_heads[i_layer],
                 window_size=window_size,
@@ -767,22 +804,21 @@ class SwinTransformer(nn.Module):
                 qk_scale=qk_scale,
                 drop=drop_rate,
                 attn_drop=attn_drop_rate,
-                drop_path=dpr[sum(depths[:i_layer]):sum(depths[:i_layer + 1])],
+                drop_path=dpr[sum(depths[:i_layer]) : sum(depths[: i_layer + 1])],
                 norm_layer=norm_layer,
-                downsample=PatchMerging if
-                (i_layer < self.num_layers - 1) else None,
+                downsample=PatchMerging if (i_layer < self.num_layers - 1) else None,
                 use_checkpoint=use_checkpoint,
                 pat_merg_rf=pat_merg_rf,
             )
             self.layers.append(layer)
 
-        num_features = [int(embed_dim * 2 ** i) for i in range(self.num_layers)]
+        num_features = [int(embed_dim * 2**i) for i in range(self.num_layers)]
         self.num_features = num_features
 
         # add a norm layer for each output
         for i_layer in out_indices:
             layer = norm_layer(num_features[i_layer])
-            layer_name = f'norm{i_layer}'
+            layer_name = f"norm{i_layer}"
             self.add_module(layer_name, layer)
 
         self._freeze_stages()
@@ -814,7 +850,7 @@ class SwinTransformer(nn.Module):
 
         def _init_weights(m):
             if isinstance(m, nn.Linear):
-                trunc_normal_(m.weight, std=.02)
+                trunc_normal_(m.weight, std=0.02)
                 if isinstance(m, nn.Linear) and m.bias is not None:
                     nn.init.constant_(m.bias, 0)
             elif isinstance(m, nn.LayerNorm):
@@ -826,7 +862,7 @@ class SwinTransformer(nn.Module):
         elif pretrained is None:
             self.apply(_init_weights)
         else:
-            raise TypeError('pretrained must be a str or None')
+            raise TypeError("pretrained must be a str or None")
 
     def forward(self, x):
         """Forward function."""
@@ -837,11 +873,10 @@ class SwinTransformer(nn.Module):
 
         if self.ape:
             # interpolate the position embedding to the corresponding size
-            absolute_pos_embed = nnf.interpolate(self.absolute_pos_embed,
-                                                 size=(Wh, Ww, Wt),
-                                                 mode='trilinear')
-            x = (x + absolute_pos_embed).flatten(2).transpose(
-                1, 2)  # B Wh*Ww*Wt C
+            absolute_pos_embed = nnf.interpolate(
+                self.absolute_pos_embed, size=(Wh, Ww, Wt), mode="trilinear"
+            )
+            x = (x + absolute_pos_embed).flatten(2).transpose(1, 2)  # B Wh*Ww*Wt C
         elif self.spe:
             x = (x + self.pos_embd(x)).flatten(2).transpose(1, 2)
         else:
@@ -853,12 +888,14 @@ class SwinTransformer(nn.Module):
             layer = self.layers[i]
             x_out, H, W, T, x, Wh, Ww, Wt = layer(x, Wh, Ww, Wt)
             if i in self.out_indices:
-                norm_layer = getattr(self, f'norm{i}')
+                norm_layer = getattr(self, f"norm{i}")
                 x_out = norm_layer(x_out)
 
-                out = x_out.view(-1, H, W, T,
-                                 self.num_features[i]).permute(0, 4, 1, 2,
-                                                               3).contiguous()
+                out = (
+                    x_out.view(-1, H, W, T, self.num_features[i])
+                    .permute(0, 4, 1, 2, 3)
+                    .contiguous()
+                )
                 outs.append(out)
         return outs
 
@@ -868,88 +905,13 @@ class SwinTransformer(nn.Module):
         self._freeze_stages()
 
 
-class Conv3dLReLU(nn.Sequential):
-    def __init__(
-            self,
-            in_channels: int,
-            out_channels: int,
-            kernel_size: int,
-            padding: int = 0,
-            stride: int = 1,
-            negative_slope: float = 0.01,
-            use_batchnorm: bool = True,
-    ):
-        conv = nn.Conv3d(
-            in_channels,
-            out_channels,
-            kernel_size,
-            stride=stride,
-            padding=padding,
-            bias=False,
-        )
-        lrelu = nn.LeakyReLU(negative_slope=negative_slope, inplace=True)
-        if not use_batchnorm:
-            norm = nn.InstanceNorm3d(out_channels)
-        else:
-            norm = nn.BatchNorm3d(out_channels)
-
-        super(Conv3dLReLU, self).__init__(conv, norm, lrelu)
-
-
-class DecoderBlock(nn.Module):
-    def __init__(
-            self,
-            in_channels,
-            out_channels,
-            skip_channels=0,
-            use_batchnorm=True,
-    ):
-        super().__init__()
-        self.conv1 = Conv3dLReLU(
-            in_channels + skip_channels,
-            out_channels,
-            kernel_size=3,
-            padding=1,
-            use_batchnorm=use_batchnorm,
-        )
-        self.conv2 = Conv3dLReLU(
-            out_channels,
-            out_channels,
-            kernel_size=3,
-            padding=1,
-            use_batchnorm=use_batchnorm,
-        )
-        self.up = nn.Upsample(scale_factor=2,
-                              mode='trilinear',
-                              align_corners=False)
-
-    def forward(self, x, skip=None):
-        x = self.up(x)
-        if skip is not None:
-            x = torch.cat([x, skip], dim=1)
-        x = self.conv1(x)
-        x = self.conv2(x)
-        return x
-
-
-class FlowConv(nn.Sequential):
-    def __init__(self, in_channels, out_channels, kernel_size=3):
-        conv3d = nn.Conv3d(in_channels,
-                           out_channels,
-                           kernel_size=kernel_size,
-                           stride=1,
-                           padding=kernel_size // 2)
-        conv3d.weight = nn.Parameter(
-            Normal(0, 1e-5).sample(conv3d.weight.shape))
-        conv3d.bias = nn.Parameter(torch.zeros(conv3d.bias.shape))
-        super().__init__(conv3d)
-
-
 @FLOW_ESTIMATORS.register_module()
-class TransMorph(nn.Module):
+class TransMorph3D(nn.Module):
     def __init__(self, config):
         """TransMorph Model."""
-        super(TransMorph, self).__init__()
+        super(TransMorph3D, self).__init__()
+        assert config.spatial_dims == 3
+        self.spatial_dims = config.spatial_dims
         if_convskip = config.if_convskip
         self.if_convskip = if_convskip
         if_transskip = config.if_transskip
@@ -974,42 +936,62 @@ class TransMorph(nn.Module):
             out_indices=config.out_indices,
             pat_merg_rf=config.pat_merg_rf,
         )
-        self.up0 = DecoderBlock(embed_dim * 8,
-                                embed_dim * 4,
-                                skip_channels=embed_dim *
-                                              4 if if_transskip else 0,
-                                use_batchnorm=False)
-        self.up1 = DecoderBlock(embed_dim * 4,
-                                embed_dim * 2,
-                                skip_channels=embed_dim *
-                                              2 if if_transskip else 0,
-                                use_batchnorm=False)  # 384, 20, 20, 64
-        self.up2 = DecoderBlock(embed_dim * 2,
-                                embed_dim,
-                                skip_channels=embed_dim if if_transskip else 0,
-                                use_batchnorm=False)  # 384, 40, 40, 64
-        self.up3 = DecoderBlock(embed_dim,
-                                config.reg_head_chan,
-                                skip_channels=embed_dim //
-                                              2 if if_convskip else 0,
-                                use_batchnorm=False)  # 384, 80, 80, 128
-        # self.up4 = DecoderBlock(embed_dim//2, config.reg_head_chan, skip_channels=config.reg_head_chan if if_convskip else 0, use_batchnorm=False)  # 384, 160, 160, 256
-        self.c1 = Conv3dLReLU(config.in_chans, embed_dim // 2, 3, 1, use_batchnorm=False)
-        # self.c2 = Conv3dReLU(2,
-        #                      config.reg_head_chan,
-        #                      3,
-        #                      1,
-        #                      use_batchnorm=False)
+        self.up0 = TMDecoderBlock(
+            self.spatial_dims,
+            embed_dim * 8,
+            embed_dim * 4,
+            skip_channels=embed_dim * 4 if if_transskip else 0,
+            use_batchnorm=False,
+        )
+        self.up1 = TMDecoderBlock(
+            self.spatial_dims,
+            embed_dim * 4,
+            embed_dim * 2,
+            skip_channels=embed_dim * 2 if if_transskip else 0,
+            use_batchnorm=False,
+        )  # 384, 20, 20, 64
+        self.up2 = TMDecoderBlock(
+            self.spatial_dims,
+            embed_dim * 2,
+            embed_dim,
+            skip_channels=embed_dim if if_transskip else 0,
+            use_batchnorm=False,
+        )  # 384, 40, 40, 64
+        self.up3 = TMDecoderBlock(
+            self.spatial_dims,
+            embed_dim,
+            config.reg_head_chan,
+            skip_channels=embed_dim // 2 if if_convskip else 0,
+            use_batchnorm=False,
+        )  # 384, 80, 80, 128
+        # self.up4 = TMDecoderBlock(
+        #     self.spatial_dims,
+        #     embed_dim // 2,
+        #     config.reg_head_chan,
+        #     skip_channels=config.reg_head_chan if if_convskip else 0,
+        #     use_batchnorm=False,
+        # )  # 384, 160, 160, 256
+        self.c1 = ConvLReLU(
+            self.spatial_dims,
+            config.in_chans,
+            embed_dim // 2,
+            3,
+            1,
+            use_batchnorm=False,
+        )
+        # self.c2 = ConvLReLU(
+        #     self.spatial_dims, 2, config.reg_head_chan, 3, 1, use_batchnorm=False
+        # )
         self.flow_conv = FlowConv(
+            spatial_dims=self.spatial_dims,
             in_channels=config.reg_head_chan,
-            out_channels=3,
             kernel_size=3,
         )
-        self.avg_pool = nn.AvgPool3d(3, stride=2, padding=1)
+        AvgPool = getattr(nn, "AvgPool%dd" % self.spatial_dims)
+        self.avg_pool = AvgPool(kernel_size=3, stride=2, padding=1)
 
-    def forward(self, source: torch.Tensor,
-                target: torch.Tensor) -> torch.Tensor:
-        """"
+    def forward(self, source: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        """ "
         Args:
             source (torch.tensor): [BCHWD]
             target (torch.tensor): [BCHWD]
@@ -1034,63 +1016,6 @@ class TransMorph(nn.Module):
             f2 = None
             f3 = None
         x = self.up0(out_feats[-1], f1)
-        x = self.up1(x, f2)
-        x = self.up2(x, f3)
-        x = self.up3(x, f4)
-        flow = self.flow_conv(x)
-        return flow
-
-
-@FLOW_ESTIMATORS.register_module()
-class TransMorph_Dual(TransMorph):
-    def __init__(self, config):
-        super().__init__(config)
-        if_convskip = config.if_convskip
-        self.if_convskip = if_convskip
-        if_transskip = config.if_transskip
-        self.if_transskip = if_transskip
-        embed_dim = config.embed_dim * 2
-        self.up0 = DecoderBlock(embed_dim * 8,
-                                embed_dim * 4,
-                                skip_channels=embed_dim *
-                                              4 if if_transskip else 0,
-                                use_batchnorm=False)
-        self.up1 = DecoderBlock(embed_dim * 4,
-                                embed_dim * 2,
-                                skip_channels=embed_dim *
-                                              2 if if_transskip else 0,
-                                use_batchnorm=False)  # 384, 20, 20, 64
-        self.up2 = DecoderBlock(embed_dim * 2,
-                                embed_dim,
-                                skip_channels=embed_dim if if_transskip else 0,
-                                use_batchnorm=False)  # 384, 40, 40, 64
-        self.up3 = DecoderBlock(embed_dim,
-                                config.reg_head_chan,
-                                skip_channels=embed_dim //
-                                              2 if if_convskip else 0,
-                                use_batchnorm=False)  # 384, 80, 80, 128
-
-    def forward(self, source: torch.Tensor,
-                target: torch.Tensor) -> torch.Tensor:
-        if self.if_convskip:
-            src_s1 = self.avg_pool(source)
-            tgt_s1 = self.avg_pool(target)
-            f4 = torch.cat([self.c1(src_s1), self.c1(tgt_s1)], dim=1)
-        else:
-            f4 = None
-
-        src_feats = self.transformer(source)
-        tgt_feats = self.transformer(target)
-
-        if self.if_transskip:
-            f1 = torch.cat([src_feats[-2], tgt_feats[-2]], dim=1)
-            f2 = torch.cat([src_feats[-3], tgt_feats[-3]], dim=1)
-            f3 = torch.cat([src_feats[-4], tgt_feats[-4]], dim=1)
-        else:
-            f1 = None
-            f2 = None
-            f3 = None
-        x = self.up0(torch.cat([src_feats[-1], tgt_feats[-1]], dim=1), f1)
         x = self.up1(x, f2)
         x = self.up2(x, f3)
         x = self.up3(x, f4)

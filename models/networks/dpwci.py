@@ -8,7 +8,7 @@ import torch.nn as nn
 from functools import partial
 
 from models import FLOW_ESTIMATORS, ResizeFlow, Warp
-from .transmorph import FlowConv
+from .utils import FlowConv
 from .dpwc import WarpPyramidalDecoder, WarpCorrPyramidalDecoder, VXM_DualWarpPy, VXM_DWPC
 
 

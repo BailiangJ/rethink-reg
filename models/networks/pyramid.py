@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 
 from models import FLOW_ESTIMATORS, ResizeFlow
-from .transmorph import FlowConv
+from .utils import FlowConv
 from .voxelmorph import CNNEncoder, CNNDecoder
 
 
@@ -22,8 +22,8 @@ class CNNPyramidalDecoder(CNNDecoder):
         for i in range(self.num_levels):
             self.flow_convs.append(
                 FlowConv(
+                    spatial_dims=spatial_dims,
                     in_channels=out_channels[i] if i == 0 else out_channels[i] + 3,
-                    out_channels=3,
                 )
             )
         self.resize_flow = ResizeFlow(

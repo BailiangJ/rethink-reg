@@ -38,3 +38,42 @@ class GlobalCorrTorch3D(nn.Module):
         corr = torch.einsum('bci, bcj -> bji', x_flat, y_flat)
         corr *= (c ** -0.5)
         return corr.view(b,-1,d,h,w)
+
+
+class WinCorrTorch2D(nn.Module):
+    def __init__(self, radius: int = 3):
+        super().__init__()
+        self.win_size = 2 * radius + 1
+        self.radius = radius
+        self.padding = nn.ConstantPad2d(radius, 0)
+
+    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        assert x.shape == y.shape
+        b, c, h, w = x.shape  # height, width
+        y_padded = self.padding(y)
+        offset = torch.meshgrid(
+            [torch.arange(0, self.win_size) for _ in range(2)]
+        )
+        corr = torch.cat(
+            [
+                torch.sum(x * y_padded[:, :, dy:dy + h, dx:dx + w], dim=1, keepdim=True)
+                for dy, dx in zip(offset[0].flatten(), offset[1].flatten())
+            ],
+            dim=1,
+        )
+        corr *= (c ** -0.5)
+        return corr
+
+
+class GlobalCorrTorch2D(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        assert x.shape == y.shape
+        b, c, h, w = x.shape
+        x_flat = x.view(b, c, -1)
+        y_flat = y.view(b, c, -1)
+        corr = torch.einsum('bci, bcj -> bji', x_flat, y_flat)
+        corr *= (c ** -0.5)
+        return corr.view(b, -1, h, w)

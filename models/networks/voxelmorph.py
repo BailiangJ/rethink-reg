@@ -8,7 +8,7 @@ from monai.networks.blocks.dynunet_block import get_conv_layer
 from monai.networks.layers.utils import get_pool_layer
 
 from models import FLOW_ESTIMATORS
-from .transmorph import FlowConv
+from .utils import FlowConv
 
 
 class BasicBlock(nn.Module):

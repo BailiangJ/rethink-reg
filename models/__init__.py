@@ -34,13 +34,13 @@ from .utils import (
 )
 from .backbones import UNet
 # from .flow_estimators import VoxelMorph
-from .networks import (TransMorph,
-                       TransMorph_Dual,
+from .networks import (TransMorph3D,
+                       TransMorph2D,
                        LKUNet,
-                       LKUNet_Dual,
                        VoxelMorph,
                        Mamba_VXM,
-                       Mamba_TM,
+                       Mamba_TM3D,
+                       Mamba_TM2D,
                        VoxelMorph_Dual,
                        VXM_Pyramid,
                        VXM_DualPy,
