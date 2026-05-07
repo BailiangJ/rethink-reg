@@ -126,8 +126,8 @@ class MambaEncoder(nn.Module):
             )
             trunc_normal_(self.absolute_pos_embed, std=0.02)
         elif self.spe:
-            self.pos_embd = SinPositionalEncoding2D(embed_dim).cuda()
-            # self.pos_embd = SinusoidalPositionEmbedding().cuda()
+            self.pos_embd = SinPositionalEncoding2D(embed_dim)
+            # self.pos_embd = SinusoidalPositionEmbedding()
         self.pos_drop = nn.Dropout(p=drop_rate)
 
         # stochastic depth

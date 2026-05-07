@@ -246,7 +246,10 @@ class VoxelMorph(nn.Module):
         self.encoder = CNNEncoder(**encoder_cfg)
         self.decoder = CNNDecoder(**decoder_cfg)
         self.remain = CNNEncoder(**remain_cfg)
-        self.flow_conv = FlowConv(in_channels=remain_cfg.out_channels[-1], out_channels=3)
+        self.flow_conv = FlowConv(
+            spatial_dims=remain_cfg.spatial_dims,
+            in_channels=remain_cfg.out_channels[-1],
+            kernel_size=3)
 
     def forward(self, src: torch.Tensor, tgt: torch.Tensor) -> torch.Tensor:
         feats = self.encoder(torch.cat([src, tgt], dim=1))

@@ -1,7 +1,8 @@
 # Config file for Mamba-TransMorph (Replace Swin-Transformer with Mamba block)
 model_cfg = dict(
-    type='Mamba_TM',
+    type='Mamba_TM3D',
     config=dict(
+        spatial_dims=3,
         if_transskip=True,
         if_convskip=True,
         patch_size=4,

@@ -28,6 +28,9 @@ from .metrics import SDlogDetJac
 from .utils import (
     RegistrationHead,
     DownSizeRegistrationHead,
+    SVFIntegrateHead,
+    MultiScaleRegistrationHead,
+    MultiScaleAdditionRegistrationHead,
     ResizeFlow,
     Warp,
     Composite,

@@ -1,24 +1,15 @@
-import glob
-import nibabel as nib
-import numpy as np
-import os
-import pandas as pd
 import pickle
 import random
-import sys
-import torch
-from itertools import combinations, permutations
-from monai.config import KeysCollection
-from monai.data import CacheDataset
-from torch.utils.data import Dataset
-from typing import (Any, Callable, Dict, Hashable, List, Mapping, Optional,
-                    Sequence, Tuple, Union)
+from itertools import permutations
 
-from models import CFG
+from torch.utils.data import Dataset
 
 
 class PairDataset(Dataset):
     def __init__(self, data, length=None):
+        if len(data) < 2:
+            raise ValueError('PairDataset requires at least two samples.')
+
         self.data = data
         self.selected_pairs = []
 
@@ -28,7 +19,7 @@ class PairDataset(Dataset):
             self.selected_pairs.append((i, j))
 
         self.selected_pairs.append(
-            (i + 1, random.randint(0, len(data) - 2))
+            (len(data) - 1, random.randint(0, len(data) - 2))
         )
 
         self.pairs = list(permutations(range(len(data)), 2))
@@ -36,18 +27,12 @@ class PairDataset(Dataset):
             self.pairs.remove(sel_pair)
 
         random.shuffle(self.pairs)
-        # len(self.selected_pairs) < len(self.pairs)
-        # If length is specified, truncate pairs list accordingly
-        if length is not None:
-            if length <= len(self.selected_pairs):
-                self.pairs = self.selected_pairs[:length]
-            if length > len(self.selected_pairs) and length <= len(self.pairs):
-                self.pairs = self.pairs[:(length - len(self.selected_pairs))]
-                self.pairs.extend(self.selected_pairs)
 
-        # if length is not None and length <= len(self.pairs):
-        #     self.pairs = self.pairs[:(length - len(self.selected_pairs))]
-        # self.pairs.extend(self.selected_pairs)
+        self.pairs = self.selected_pairs + self.pairs
+        if length is not None:
+            if length < 1:
+                raise ValueError(f'length must be positive, got {length}.')
+            self.pairs = self.pairs[:length]
 
     def __len__(self):
         return len(self.pairs)

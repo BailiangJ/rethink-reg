@@ -1,7 +1,8 @@
 # Config file for TransMorph
 model_cfg = dict(
-    type='TransMorph',
+    type='TransMorph3D',
     config=dict(
+        spatial_dims=3,
         if_transskip=True,
         if_convskip=True,
         patch_size=4,

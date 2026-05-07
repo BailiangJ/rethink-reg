@@ -1,4 +1,4 @@
-from monai.losses import DiceLoss, LocalNormalizedCrossCorrelationLoss
+from monai.losses import DiceLoss
 
 from ..builder import LOSSES
 from .diffusion_regularizer import GradientDiffusionLoss

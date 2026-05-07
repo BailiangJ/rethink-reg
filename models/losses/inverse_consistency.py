@@ -23,6 +23,7 @@ class InverseConsistentLoss(nn.Module):
             image_size (Sequence[int]): shape of input flow field.
         """
         super().__init__()
+        flow_loss_cfg = dict(flow_loss_cfg)
         flow_loss_cfg.pop('type', None)
         self.flow_loss = FlowLoss(**flow_loss_cfg)
         self.image_size = image_size

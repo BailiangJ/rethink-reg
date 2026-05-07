@@ -65,7 +65,7 @@ class TargetRegistrationError:
         """
         assert list(self.image_size) == list(flow.shape[2:]), f"displacement field spatial dimentions {flow.shape[2:]} do not match image size {self.image_size}."
         assert fixed_keypnts.shape == moving_keypnts.shape, f"fixed key points shape {fixed_keypnts.shape} does not match moving key points shape {moving_keypnts.shape}."
-        self.spacing = self.spacing.to(device)
+        spacing = self.spacing.to(device=flow.device, dtype=flow.dtype)
 
         fixed_keypnts_flow = self.sample_displacement_flow(fixed_keypnts, flow, self.interp_mode)
         # (B, 3, 1, 1, N) -> (B, 3, N)
@@ -75,5 +75,5 @@ class TargetRegistrationError:
 
         warped_fixed_keypnts = fixed_keypnts + fixed_keypnts_flow
         # (B, N, 3) -> (B, N)
-        tre = torch.linalg.norm((warped_fixed_keypnts - moving_keypnts) * self.spacing, dim=-1)
+        tre = torch.linalg.norm((warped_fixed_keypnts - moving_keypnts) * spacing, dim=-1)
         return tre

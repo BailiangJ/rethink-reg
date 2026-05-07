@@ -1,9 +1,8 @@
-import warnings
 from typing import Optional
 
 import torch
-import torch.nn as nn
 from mmengine.model import BaseModule
+from torch.nn.modules.batchnorm import _BatchNorm
 
 from ..builder import BACKBONES, build_decoder, build_encoder
 

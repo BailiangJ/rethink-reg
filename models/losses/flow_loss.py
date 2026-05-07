@@ -102,28 +102,31 @@ class FlowLoss(nn.Module):
 
         # dist: (B1HWD)
         # fg_mask: (B1HWD)
+        spatial_axes = tuple(range(2, dist.ndim))
         if fg_mask is not None:
-            if dist.shape[-3:] != fg_mask.shape[:-3]:
-                output_size = dist.shape[-3:]
+            if dist.shape[2:] != fg_mask.shape[2:]:
+                output_size = dist.shape[2:]
+                interp_mode = {3: 'linear', 4: 'bilinear', 5: 'trilinear'}[dist.ndim]
                 fg_mask = F.interpolate(fg_mask,
                                         align_corners=True,
                                         size=output_size,
-                                        mode='trilinear')
+                                        mode=interp_mode)
 
             if dist.shape[0] != fg_mask.shape[0]:
-                fg_mask = fg_mask.repeat(dist.shape[0], 1, 1, 1, 1)
+                if fg_mask.shape[0] == 1:
+                    fg_mask = fg_mask.repeat(dist.shape[0], *([1] * (fg_mask.ndim - 1)))
 
             assert dist.shape == fg_mask.shape, f'foreground mask shape {fg_mask.shape} does not match flow loss dist shape {dist.shape}.'
 
             if not val:
                 loss = torch.sum(dist * fg_mask) / torch.sum(fg_mask)
             else:
-                loss = (dist*fg_mask).sum(dim=(2,3,4)) / fg_mask.sum(dim=(2,3,4))
+                loss = (dist * fg_mask).sum(dim=spatial_axes) / fg_mask.sum(dim=spatial_axes)
         else:
             if not val:
                 loss = torch.mean(dist)
             else:
-                loss = dist.mean(dim=(2,3,4))
+                loss = dist.mean(dim=spatial_axes)
 
         return loss
 

@@ -48,7 +48,7 @@ class Warp(nn.Module):
         mesh_points = [
             torch.arange(0, dim, dtype=torch.float) for dim in image_size
         ]
-        grid = torch.stack(torch.meshgrid(*mesh_points),
+        grid = torch.stack(torch.meshgrid(*mesh_points, indexing='ij'),
                            dim=0)  # (spatial_dims, ...)
         return grid
 

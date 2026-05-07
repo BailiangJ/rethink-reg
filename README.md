@@ -99,7 +99,7 @@ Many thanks to the following repositories for providing helpful resources to my 
 
 ---
 
-## Lincense & Copyright
+## License & Copyright
 
 © Bailiang Jian
-Licensed under the [MIT Licensce](LICENSCE)
+Licensed under the [MIT License](LICENSE)

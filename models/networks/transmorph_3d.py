@@ -137,7 +137,7 @@ class WindowAttention(nn.Module):
         coords_w = torch.arange(self.window_size[1])
         coords_t = torch.arange(self.window_size[2])
         coords = torch.stack(
-            torch.meshgrid([coords_h, coords_w, coords_t])
+            torch.meshgrid(coords_h, coords_w, coords_t, indexing="ij")
         )  # 3, Wh, Ww, Wt
         coords_flatten = torch.flatten(coords, 1)  # 3, Wh*Ww*Wt
         self.rpe = rpe
@@ -633,8 +633,8 @@ class SinusoidalPositionEmbedding(nn.Module):
 
     def forward(self, x):
         batch_sz, n_patches, hidden = x.shape
-        position_ids = torch.arange(0, n_patches).float().cuda()
-        indices = torch.arange(0, hidden // 2).float().cuda()
+        position_ids = torch.arange(0, n_patches, device=x.device, dtype=x.dtype)
+        indices = torch.arange(0, hidden // 2, device=x.device, dtype=x.dtype)
         indices = torch.pow(10000.0, -2 * indices / hidden)
         embeddings = torch.einsum("b,d->bd", position_ids, indices)
         embeddings = torch.stack([torch.sin(embeddings), torch.cos(embeddings)], dim=-1)
@@ -652,10 +652,10 @@ class SinPositionalEncoding3D(nn.Module):
         if channels % 2:
             channels += 1
         self.channels = channels
-        self.inv_freq = 1.0 / (
+        inv_freq = 1.0 / (
             10000 ** (torch.arange(0, channels, 2).float() / channels)
         )
-        # self.register_buffer('inv_freq', inv_freq)
+        self.register_buffer("inv_freq", inv_freq, persistent=False)
 
     def forward(self, tensor):
         """
@@ -666,12 +666,13 @@ class SinPositionalEncoding3D(nn.Module):
         if len(tensor.shape) != 5:
             raise RuntimeError("The input tensor has to be 5d!")
         batch_size, x, y, z, orig_ch = tensor.shape
-        pos_x = torch.arange(x, device=tensor.device).type(self.inv_freq.type())
-        pos_y = torch.arange(y, device=tensor.device).type(self.inv_freq.type())
-        pos_z = torch.arange(z, device=tensor.device).type(self.inv_freq.type())
-        sin_inp_x = torch.einsum("i,j->ij", pos_x, self.inv_freq)
-        sin_inp_y = torch.einsum("i,j->ij", pos_y, self.inv_freq)
-        sin_inp_z = torch.einsum("i,j->ij", pos_z, self.inv_freq)
+        inv_freq = self.inv_freq.to(device=tensor.device, dtype=tensor.dtype)
+        pos_x = torch.arange(x, device=tensor.device, dtype=tensor.dtype)
+        pos_y = torch.arange(y, device=tensor.device, dtype=tensor.dtype)
+        pos_z = torch.arange(z, device=tensor.device, dtype=tensor.dtype)
+        sin_inp_x = torch.einsum("i,j->ij", pos_x, inv_freq)
+        sin_inp_y = torch.einsum("i,j->ij", pos_y, inv_freq)
+        sin_inp_z = torch.einsum("i,j->ij", pos_z, inv_freq)
         emb_x = (
             torch.cat((sin_inp_x.sin(), sin_inp_x.cos()), dim=-1)
             .unsqueeze(1)
@@ -679,8 +680,8 @@ class SinPositionalEncoding3D(nn.Module):
         )
         emb_y = torch.cat((sin_inp_y.sin(), sin_inp_y.cos()), dim=-1).unsqueeze(1)
         emb_z = torch.cat((sin_inp_z.sin(), sin_inp_z.cos()), dim=-1)
-        emb = torch.zeros((x, y, z, self.channels * 3), device=tensor.device).type(
-            tensor.type()
+        emb = torch.zeros(
+            (x, y, z, self.channels * 3), device=tensor.device, dtype=tensor.dtype
         )
         emb[:, :, :, : self.channels] = emb_x
         emb[:, :, :, self.channels : 2 * self.channels] = emb_y
@@ -779,8 +780,8 @@ class SwinTransformer(nn.Module):
             )
             trunc_normal_(self.absolute_pos_embed, std=0.02)
         elif self.spe:
-            self.pos_embd = SinPositionalEncoding3D(embed_dim).cuda()
-            # self.pos_embd = SinusoidalPositionEmbedding().cuda()
+            self.pos_embd = SinPositionalEncoding3D(embed_dim)
+            # self.pos_embd = SinusoidalPositionEmbedding()
         self.pos_drop = nn.Dropout(p=drop_rate)
 
         # stochastic depth
@@ -906,12 +907,14 @@ class SwinTransformer(nn.Module):
 
 
 @FLOW_ESTIMATORS.register_module()
+@FLOW_ESTIMATORS.register_module(name="TransMorph")
 class TransMorph3D(nn.Module):
     def __init__(self, config):
         """TransMorph Model."""
         super(TransMorph3D, self).__init__()
-        assert config.spatial_dims == 3
-        self.spatial_dims = config.spatial_dims
+        spatial_dims = getattr(config, "spatial_dims", 3)
+        assert spatial_dims == 3
+        self.spatial_dims = spatial_dims
         if_convskip = config.if_convskip
         self.if_convskip = if_convskip
         if_transskip = config.if_transskip

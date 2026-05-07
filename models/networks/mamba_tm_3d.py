@@ -5,7 +5,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributions.normal import Normal
-from timm.models.layers import DropPath
 from monai.networks.layers import Conv
 from monai.utils import ensure_tuple_rep
 from timm.models.layers import DropPath, trunc_normal_, to_3tuple
@@ -139,7 +138,7 @@ class MambaEncoder(nn.Module):
             )
             trunc_normal_(self.absolute_pos_embed, std=0.02)
         elif self.spe:
-            self.pos_embd = SinPositionalEncoding3D(embed_dim).cuda()
+            self.pos_embd = SinPositionalEncoding3D(embed_dim)
         self.pos_drop = nn.Dropout(p=drop_rate)
 
         # stochastic depth
@@ -259,11 +258,13 @@ class MambaEncoder(nn.Module):
 
 
 @FLOW_ESTIMATORS.register_module()
+@FLOW_ESTIMATORS.register_module(name="Mamba_TM")
 class Mamba_TM3D(nn.Module):
     def __init__(self, config):
         super().__init__()
-        assert config.spatial_dims == 3
-        self.spatial_dims = config.spatial_dims
+        spatial_dims = getattr(config, "spatial_dims", 3)
+        assert spatial_dims == 3
+        self.spatial_dims = spatial_dims
         if_convskip = config.if_convskip
         self.if_convskip = if_convskip
         if_transskip = config.if_transskip

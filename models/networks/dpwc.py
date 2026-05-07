@@ -57,7 +57,7 @@ class WarpPyramidalDecoder(CNNDecoder):
         prev_flow = None
 
         for i in range(self.num_levels):
-            if prev_flow == None:
+            if prev_flow is None:
                 feats = torch.cat([src_feats[i], tgt_feats[i]], dim=1)
                 prev_dec = self.decoder[i](prev_dec, feats)
                 prev_flow = self.flow_convs[i](prev_dec)

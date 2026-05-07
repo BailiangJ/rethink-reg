@@ -14,7 +14,8 @@ class WinCorrTorch3D(nn.Module):
         b, c, d, h, w = x.shape  # depth, height, width
         y_padded = self.padding(y)
         offset = torch.meshgrid(
-            [torch.arange(0, self.win_size) for _ in range(3)]
+            *[torch.arange(0, self.win_size) for _ in range(3)],
+            indexing="ij",
         )
         corr = torch.cat(
             [
@@ -52,7 +53,8 @@ class WinCorrTorch2D(nn.Module):
         b, c, h, w = x.shape  # height, width
         y_padded = self.padding(y)
         offset = torch.meshgrid(
-            [torch.arange(0, self.win_size) for _ in range(2)]
+            *[torch.arange(0, self.win_size) for _ in range(2)],
+            indexing="ij",
         )
         corr = torch.cat(
             [

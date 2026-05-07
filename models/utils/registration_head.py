@@ -1,4 +1,4 @@
-from typing import Optional, Sequence, Union
+from typing import Optional, Sequence
 
 import numpy as np
 import torch
@@ -116,18 +116,27 @@ class SVFIntegrateHead(nn.Module):
                  bidir: bool = False,
                  interp_mode: str = 'bilinear') -> None:
         super().__init__()
+        self.image_size = tuple(int(s) for s in image_size)
+        self.int_steps = int_steps
+        self.resize_scale = resize_scale
+        self.resize_first = resize_first
+        self.interp_mode = interp_mode
+
         if int_steps > 0:
-            flow_size = [s / resize_scale for s in image_size]
+            if any(s % resize_scale != 0 for s in self.image_size):
+                raise ValueError(
+                    f'image_size {self.image_size} must be divisible by resize_scale {resize_scale}.'
+                )
+            flow_size = [s // resize_scale for s in self.image_size]
             self.integrate = VecIntegrate(flow_size, int_steps, interp_mode)
         else:
             self.integrate = None
 
         self.resize_flow = ResizeFlow(spatial_scale=resize_scale,
                                       flow_scale=resize_scale,
-                                      ndim=len(image_size))
-        self.resize_first = resize_first
+                                      ndim=len(self.image_size))
         self.bidir = bidir if int_steps > 0 else False
-        self.warp = Warp(image_size, interp_mode)
+        self.warp = Warp(self.image_size, interp_mode)
 
     def forward(
             self,
@@ -196,19 +205,22 @@ class MultiScaleRegistrationHead(nn.Module):
 
     def __init__(self,
                  image_size: Sequence[int],
-                 scale_pyramid: Sequence[int] = [4, 8],
+                 scale_pyramid: Optional[Sequence[int]] = None,
                  interp_mode: str = 'bilinear',
-                 device: str = 'cuda') -> None:
+                 device: Optional[str] = None) -> None:
         super().__init__()
         self.image_size = np.array(image_size)
-        self.scale_pyramid = scale_pyramid
-        self.avg_pools = [nn.AvgPool3d(kernel_size=scale,
-                                       stride=scale,
-                                       padding=0)
-                          for scale in self.scale_pyramid
-                          ]
-        self.warps = [Warp(self.image_size // scale, interp_mode).to(device)
-                      for scale in self.scale_pyramid]
+        self.scale_pyramid = tuple(scale_pyramid or (4, 8))
+        self.avg_pools = nn.ModuleList([
+            nn.AvgPool3d(kernel_size=scale, stride=scale, padding=0)
+            for scale in self.scale_pyramid
+        ])
+        self.warps = nn.ModuleList([
+            Warp((self.image_size // scale).tolist(), interp_mode)
+            for scale in self.scale_pyramid
+        ])
+        if device is not None:
+            self.to(device)
 
     def forward(
             self,
@@ -244,25 +256,28 @@ class MultiScaleAdditionRegistrationHead(nn.Module):
 
     def __init__(self,
                  image_size: Sequence[int],
-                 scale_pyramid: Sequence[int] = [8, 4],
+                 scale_pyramid: Optional[Sequence[int]] = None,
                  interp_mode: str = 'bilinear',
-                 device: str = 'cuda') -> None:
+                 device: Optional[str] = None) -> None:
         super().__init__()
         self.image_size = np.array(image_size)
-        self.scale_pyramid = scale_pyramid
-        self.avg_pools = [nn.AvgPool3d(kernel_size=scale,
-                                       stride=scale,
-                                       padding=0)
-                          for scale in self.scale_pyramid
-                          ]
-        self.warps = [Warp(self.image_size // scale, interp_mode).to(device)
-                      for scale in self.scale_pyramid]
+        self.scale_pyramid = tuple(scale_pyramid or (8, 4))
+        self.avg_pools = nn.ModuleList([
+            nn.AvgPool3d(kernel_size=scale, stride=scale, padding=0)
+            for scale in self.scale_pyramid
+        ])
+        self.warps = nn.ModuleList([
+            Warp((self.image_size // scale).tolist(), interp_mode)
+            for scale in self.scale_pyramid
+        ])
 
         self.resize_flow = ResizeFlow(spatial_scale=2,
                                       flow_scale=2,
                                       ndim=len(image_size))
 
-        self.orig_warp = Warp(self.image_size, interp_mode).to(device)
+        self.orig_warp = Warp(self.image_size.tolist(), interp_mode)
+        if device is not None:
+            self.to(device)
 
     def forward(
             self,

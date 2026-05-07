@@ -1,8 +1,6 @@
 import torch
 import torch.nn as nn
-import numpy as np
 import torch.nn.functional as F
-from torch.distributions.normal import Normal
 from timm.models.layers import DropPath
 from mamba_ssm import Mamba
 from typing import Optional
@@ -56,7 +54,9 @@ class FlowConv(nn.Sequential):
             stride=1,
             padding=kernel_size // 2,
         )
-        conv.weight = nn.Parameter(Normal(0, 1e-5).sample(conv.weight.shape))
+        nn.init.normal_(conv.weight, mean=0.0, std=1e-5)
+        if conv.bias is not None:
+            nn.init.zeros_(conv.bias)
         super().__init__(conv)
 
 
@@ -268,7 +268,7 @@ class MlpChannel(nn.Module):
     def forward(self, x):
         x = self.fc1(x)
         x = self.act(x)
-        self.drop(x)
+        x = self.drop(x)
         x = self.fc2(x)
-        self.drop(x)
+        x = self.drop(x)
         return x

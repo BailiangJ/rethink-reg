@@ -92,7 +92,7 @@ class WindowAttention(nn.Module):
         # get pair-wise relative position index for each token inside the window
         coords_h = torch.arange(self.window_size[0])
         coords_w = torch.arange(self.window_size[1])
-        coords = torch.stack(torch.meshgrid([coords_h, coords_w]))  # 2, Wh, Ww
+        coords = torch.stack(torch.meshgrid(coords_h, coords_w, indexing="ij"))  # 2, Wh, Ww
         coords_flatten = torch.flatten(coords, 1)  # 2, Wh*Ww
         self.rpe = rpe
         if self.rpe:
@@ -538,9 +538,10 @@ class SinPositionalEncoding2D(nn.Module):
         super(SinPositionalEncoding2D, self).__init__()
         channels = int(np.ceil(channels / 4) * 2)
         self.channels = channels
-        self.inv_freq = 1.0 / (
+        inv_freq = 1.0 / (
             10000 ** (torch.arange(0, channels, 2).float() / channels)
         )
+        self.register_buffer("inv_freq", inv_freq, persistent=False)
 
     def forward(self, tensor):
         """
@@ -551,18 +552,19 @@ class SinPositionalEncoding2D(nn.Module):
         if len(tensor.shape) != 4:
             raise RuntimeError("The input tensor has to be 4d!")
         batch_size, x, y, orig_ch = tensor.shape
-        pos_x = torch.arange(x, device=tensor.device).type(self.inv_freq.type())
-        pos_y = torch.arange(y, device=tensor.device).type(self.inv_freq.type())
-        sin_inp_x = torch.einsum("i,j->ij", pos_x, self.inv_freq)
-        sin_inp_y = torch.einsum("i,j->ij", pos_y, self.inv_freq)
+        inv_freq = self.inv_freq.to(device=tensor.device, dtype=tensor.dtype)
+        pos_x = torch.arange(x, device=tensor.device, dtype=tensor.dtype)
+        pos_y = torch.arange(y, device=tensor.device, dtype=tensor.dtype)
+        sin_inp_x = torch.einsum("i,j->ij", pos_x, inv_freq)
+        sin_inp_y = torch.einsum("i,j->ij", pos_y, inv_freq)
         emb_x = torch.cat((sin_inp_x.sin(), sin_inp_x.cos()), dim=-1).unsqueeze(1)
         emb_y = torch.cat((sin_inp_y.sin(), sin_inp_y.cos()), dim=-1)
-        emb = torch.zeros((x, y, self.channels * 2), device=tensor.device).type(
-            tensor.type()
+        emb = torch.zeros(
+            (x, y, self.channels * 2), device=tensor.device, dtype=tensor.dtype
         )
         emb[:, :, : self.channels] = emb_x
         emb[:, :, self.channels : 2 * self.channels] = emb_y
-        emb[None, :, :, :orig_ch].repeat(batch_size, 1, 1, 1)
+        emb = emb[None, :, :, :orig_ch].repeat(batch_size, 1, 1, 1)
         return emb.permute(0, 3, 1, 2)
 
 
@@ -648,8 +650,8 @@ class SwinTransformer(nn.Module):
             )
             trunc_normal_(self.absolute_pos_embed, std=0.02)
         elif self.spe:
-            self.pos_embd = SinPositionalEncoding2D(embed_dim).cuda()
-            # self.pos_embd = SinusoidalPositionEmbedding().cuda()
+            self.pos_embd = SinPositionalEncoding2D(embed_dim)
+            # self.pos_embd = SinusoidalPositionEmbedding()
         self.pos_drop = nn.Dropout(p=drop_rate)
 
         # stochastic depth

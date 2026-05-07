@@ -22,7 +22,9 @@ class SDlogDetJac:
                 # print(fg_mask.shape)
             fg_mask = fg_mask.astype(np.float32)
         fg_mask = fg_mask.squeeze(1)
-        assert fg_mask.shape == (B, H, W, D), "foreground mask shape {fg_mask.shape} should match {(B,H,W,D)}."
+        assert fg_mask.shape == (B, H, W, D), (
+            f"foreground mask shape {fg_mask.shape} should match {(B, H, W, D)}."
+        )
 
         gradx = np.array([-0.5, 0, 0.5]).reshape(1, 3, 1, 1)
         grady = np.array([-0.5, 0, 0.5]).reshape(1, 1, 3, 1)

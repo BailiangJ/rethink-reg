@@ -1,6 +1,5 @@
 import os
 import argparse
-import os
 import sys
 
 sys.path.append('../')
@@ -55,7 +54,8 @@ def infer(cfg):
                              ),
     ]
     datasets = [PairDataset(dataset, length=cfg.num_pairs) for dataset in datasets]
-    for d in datasets: print('num of pairs from each evaluation dataset:', len(d))
+    for d in datasets:
+        print('num of pairs from each evaluation dataset:', len(d))
     dataloaders = [DataLoader(dataset,
                               batch_size=1,
                               shuffle=True,
