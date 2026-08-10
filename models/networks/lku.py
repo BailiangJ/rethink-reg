@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import Sequence, Optional, Dict
-from models import FLOW_ESTIMATORS
+from ..builder import FLOW_ESTIMATORS
 import torch
 import torch.nn as nn
 import torch.nn.functional as F

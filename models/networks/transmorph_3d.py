@@ -20,8 +20,7 @@ import torch.nn as nn
 import torch.nn.functional as nnf
 import torch.utils.checkpoint as checkpoint
 from timm.models.layers import DropPath, to_3tuple, trunc_normal_
-from torch.distributions.normal import Normal
-from models import FLOW_ESTIMATORS
+from ..builder import FLOW_ESTIMATORS
 from .utils import Mlp, ConvLReLU, FlowConv, TMDecoderBlock
 
 
@@ -781,7 +780,7 @@ class SwinTransformer(nn.Module):
             trunc_normal_(self.absolute_pos_embed, std=0.02)
         elif self.spe:
             self.pos_embd = SinPositionalEncoding3D(embed_dim)
-            # self.pos_embd = SinusoidalPositionEmbedding()
+            # self.pos_embd = SinusoidalPositionEmbedding().cuda()
         self.pos_drop = nn.Dropout(p=drop_rate)
 
         # stochastic depth
@@ -907,14 +906,12 @@ class SwinTransformer(nn.Module):
 
 
 @FLOW_ESTIMATORS.register_module()
-@FLOW_ESTIMATORS.register_module(name="TransMorph")
 class TransMorph3D(nn.Module):
     def __init__(self, config):
         """TransMorph Model."""
         super(TransMorph3D, self).__init__()
-        spatial_dims = getattr(config, "spatial_dims", 3)
-        assert spatial_dims == 3
-        self.spatial_dims = spatial_dims
+        assert config.spatial_dims == 3
+        self.spatial_dims = config.spatial_dims
         if_convskip = config.if_convskip
         self.if_convskip = if_convskip
         if_transskip = config.if_transskip

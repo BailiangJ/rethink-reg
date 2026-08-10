@@ -1,0 +1,30 @@
+# Core environment used to validate the public benchmark.
+# Install a PyTorch build matching your CUDA toolkit before building corr_cuda.
+torch==2.5.1
+torchvision==0.20.1
+monai==1.5.0
+mmengine==0.10.7
+mmcv==2.2.0
+
+# Data, metrics, and evaluation
+numpy==2.0.1
+scipy==1.15.2
+pandas==2.3.3
+nibabel==5.3.2
+SimpleITK==2.5.2
+scikit-image==0.25.2
+
+# Model implementations and experiment tracking
+timm==1.0.19
+einops==0.8.1
+wandb==0.22.1
+
+# Visualization and command-line utilities
+matplotlib==3.10.6
+ConfigArgParse==1.7.1
+reorient-nii==1.0.0
+
+# Optional CUDA packages for Mam-VXM and Mam-TM (not installed by this file):
+#   causal-conv1d (use the version required by the selected mamba-ssm release)
+#   mamba-ssm==2.2.5
+# Install both against the same PyTorch/CUDA environment.

@@ -2,8 +2,19 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from timm.models.layers import DropPath
-from mamba_ssm import Mamba
 from typing import Optional
+
+
+def build_mamba(**kwargs):
+    """Build an SSM block only when a Mamba architecture is instantiated."""
+    try:
+        from mamba_ssm import Mamba
+    except ImportError as exc:
+        raise ImportError(
+            'Mamba models require the optional mamba-ssm and causal-conv1d '
+            'packages. See the installation section in README.md.'
+        ) from exc
+    return Mamba(**kwargs)
 
 
 class ConvLReLU(nn.Sequential):
@@ -147,7 +158,7 @@ class MambaMlpBlock(nn.Module):
         self.dim = dim
         self.norm1 = norm_layer(dim)
         self.norm2 = norm_layer(dim)
-        self.mamba = Mamba(
+        self.mamba = build_mamba(
             d_model=dim,  # Model dimension d_model
             d_state=d_state,  # SSM state expansion factor
             d_conv=d_conv,  # Local convolution width
@@ -224,7 +235,7 @@ class MambaLayer(nn.Module):
         self.dim = dim
         self.res_skip = res_skip
         self.norm = nn.LayerNorm(dim)
-        self.mamba = Mamba(
+        self.mamba = build_mamba(
             d_model=dim,  # Model dimension d_model
             d_state=d_state,  # SSM state expansion factor
             d_conv=d_conv,  # Local convolution width

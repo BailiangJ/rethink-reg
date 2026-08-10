@@ -1,5 +1,8 @@
 # self-defined
 wandb/
+# experiment artifacts: <method>_outputs/exp<N>/{saved_models,eval,infer,logs}
+*_outputs/
+.ruff_cache/
 
 
 # Byte-compiled / optimized / DLL files

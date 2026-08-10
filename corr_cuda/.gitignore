@@ -1,0 +1,12 @@
+# Compiled extension
+*.so
+*.pyd
+
+# Build artifacts
+*.egg-info/
+build/
+dist/
+
+# Caches
+__pycache__/
+.pytest_cache/

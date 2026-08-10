@@ -2,10 +2,9 @@ import torch
 import torch.nn as nn
 import torch.utils.checkpoint as checkpoint
 from timm.models.layers import DropPath, trunc_normal_, to_3tuple, to_2tuple
-from torch.distributions.normal import Normal
 import torch.nn.functional as nnf
 import numpy as np
-from models import FLOW_ESTIMATORS
+from ..builder import FLOW_ESTIMATORS
 from .utils import Mlp, ConvLReLU, FlowConv, TMDecoderBlock
 
 
@@ -559,9 +558,7 @@ class SinPositionalEncoding2D(nn.Module):
         sin_inp_y = torch.einsum("i,j->ij", pos_y, inv_freq)
         emb_x = torch.cat((sin_inp_x.sin(), sin_inp_x.cos()), dim=-1).unsqueeze(1)
         emb_y = torch.cat((sin_inp_y.sin(), sin_inp_y.cos()), dim=-1)
-        emb = torch.zeros(
-            (x, y, self.channels * 2), device=tensor.device, dtype=tensor.dtype
-        )
+        emb = torch.zeros((x, y, self.channels * 2), device=tensor.device, dtype=tensor.dtype)
         emb[:, :, : self.channels] = emb_x
         emb[:, :, self.channels : 2 * self.channels] = emb_y
         emb = emb[None, :, :, :orig_ch].repeat(batch_size, 1, 1, 1)
@@ -651,7 +648,7 @@ class SwinTransformer(nn.Module):
             trunc_normal_(self.absolute_pos_embed, std=0.02)
         elif self.spe:
             self.pos_embd = SinPositionalEncoding2D(embed_dim)
-            # self.pos_embd = SinusoidalPositionEmbedding()
+            # self.pos_embd = SinusoidalPositionEmbedding().cuda()
         self.pos_drop = nn.Dropout(p=drop_rate)
 
         # stochastic depth
@@ -745,6 +742,8 @@ class SwinTransformer(nn.Module):
                 self.absolute_pos_embed, size=(Wh, Ww), mode="bicubic"
             )
             x = (x + absolute_pos_embed).flatten(2).transpose(1, 2)  # B Wh*Ww C
+        elif self.spe:
+            x = (x + self.pos_embd(x)).flatten(2).transpose(1, 2)
         else:
             x = x.flatten(2).transpose(1, 2)
         x = self.pos_drop(x)

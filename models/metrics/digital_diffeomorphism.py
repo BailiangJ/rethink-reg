@@ -226,7 +226,7 @@ if __name__ == '__main__':
 
     # calculate non-diffeomorphic voxels, non-diffeomorphic tetrahedra,
     # and non-diffeomorphic volume
-    non_diff_voxels, non_diff_tetrahedra, non_diff_volume = calc_measurements(jac_dets, mask)
+    non_diff_voxels, non_diff_tetrahedra, non_diff_volume, _ = calc_measurements(jac_dets, mask)
 
     print('Non-diffeomorphic Voxels: {:.2f}({:.2f}%)'.format(
         non_diff_voxels,

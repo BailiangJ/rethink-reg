@@ -53,6 +53,25 @@ class TargetRegistrationError:
                                     align_corners=True)
         return sample_flow
 
+    def deform_keypoints(self,
+                         flow: torch.Tensor,
+                         keypnts: torch.Tensor) -> torch.Tensor:
+        """Deform keypoints with displacement flow.
+
+        Args:
+            flow: torch.Tensor, shape (B,3,H,W,D), dense displacement field mapping from fixed image space to moving image space
+            keypnts: torch.Tensor, shape (B,N,3), key points to deform
+        """
+        assert list(self.image_size) == list(flow.shape[2:]), f"displacement field spatial dimentions {flow.shape[2:]} do not match image size {self.image_size}."
+
+        keypnts_flow = self.sample_displacement_flow(keypnts, flow, self.interp_mode)
+        # (B, 3, 1, 1, N) -> (B, 3, N)
+        keypnts_flow = keypnts_flow.squeeze((2, 3))
+        # (B, 3, N) -> (B, N, 3)
+        keypnts_flow = keypnts_flow.permute(0, 2, 1)
+
+        return keypnts + keypnts_flow
+
     def __call__(self,
                  flow: torch.Tensor,
                  fixed_keypnts: torch.Tensor,
