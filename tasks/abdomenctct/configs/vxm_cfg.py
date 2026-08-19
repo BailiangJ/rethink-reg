@@ -1,7 +1,6 @@
-# Effective objective: L_sim + reg_weight * L_diffusion. Every auxiliary loss
-# weight (GradICON, Dice, non-positive Jacobian, TRE) is 0.0 in the paper setup.
+# Effective objective: L_sim + reg_weight * L_diffusion.
 
-import torch
+# import torch
 
 device = 'cuda'
 amp_dtype = 'bfloat16' if device == 'cpu' else 'float16'
@@ -26,6 +25,8 @@ batch_size = 1
 pairwise = True
 data_dir = "$DATA_ROOT/PSMAReg/PSMAReg_CT_affine_crop160x128x160_FU01_no0359"
 split_json = './dataset_split.json'
+# organ_list = ['liver', 'spleen', 'kidney_right', 'kidney_left',
+#               'stomach', 'pancreas', 'aorta', 'inferior_vena_cava']
 label_list = [5, 1, 2, 3, 6, 7, 52, 63]
 
 # registration head

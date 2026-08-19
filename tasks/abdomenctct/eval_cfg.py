@@ -3,6 +3,8 @@ image_size = [160, 128, 160]
 
 data_dir = "$DATA_ROOT/PSMAReg/PSMAReg_CT_affine_crop160x128x160_FU01_no0359"
 split_json = './dataset_split.json'
+# organ_list = ['liver', 'spleen', 'kidney_right', 'kidney_left',
+#               'stomach', 'pancreas', 'aorta', 'inferior_vena_cava']
 label_list = [5, 1, 2, 3, 6, 7, 52, 63]
 cache_rate = 1.0
 num_workers = -1

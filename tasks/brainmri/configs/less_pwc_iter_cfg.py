@@ -1,5 +1,5 @@
-# Effective objective: L_sim + reg_weight * L_diffusion. Every auxiliary loss
-# weight (GradICON, Dice, non-positive Jacobian, TRE) is 0.0 in the paper setup.
+# Effective objective: L_sim + reg_weight * L_diffusion.
+
 
 device = "cuda"
 amp_dtype = "bfloat16" if device == "cpu" else "float16"
